@@ -233,24 +233,30 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
   );
 }
 
-// ─── Doc Viewer (Google Docs embedded — clean, no 3rd-party branding) ────────
+// ─── Doc Viewer ───────────────────────────────────────────────────────────────
+// • PPTX/PPT  → MS Office Online  (slide-by-slide navigation built in)
+// • All other → Google Docs viewer (clean, lightweight embed)
 function DocViewer({ url, title, fileType }: { url: string; title: string; fileType: string }) {
-  const containerRef   = useRef<HTMLDivElement>(null);
-  const timerRef       = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [attempt,      setAttempt]      = useState(0);   // bumping re-mounts iframe
-  const [loading,      setLoading]      = useState(true);
-  const [timedOut,     setTimedOut]     = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const timerRef     = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [attempt,    setAttempt]    = useState(0);
+  const [loading,    setLoading]    = useState(true);
+  const [timedOut,   setTimedOut]   = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // Google Docs viewer — minimal UI, no Office branding
-  const viewerUrl = `https://docs.google.com/gview?url=${encodeURIComponent(url)}&embedded=true`;
+  // PPTX/PPT use MS Office Online — the only browser viewer that shows
+  // slides one-at-a-time with prev/next navigation.
+  // Everything else uses Google Docs (lightweight, no Office branding).
+  const isPresentation = ['pptx', 'ppt', 'ppsx', 'potx'].includes(fileType);
+  const viewerUrl = isPresentation
+    ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}`
+    : `https://docs.google.com/gview?url=${encodeURIComponent(url)}&embedded=true`;
 
-  // Reset & start timeout whenever attempt changes
   useEffect(() => {
     setLoading(true);
     setTimedOut(false);
     if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => setTimedOut(true), 18000);
+    timerRef.current = setTimeout(() => setTimedOut(true), 22000);
     return () => { if (timerRef.current) clearTimeout(timerRef.current); };
   }, [url, attempt]);
 
@@ -265,12 +271,10 @@ function DocViewer({ url, title, fileType }: { url: string; title: string; fileT
     else document.exitFullscreen();
   };
 
-  const retry = () => setAttempt(a => a + 1);
-
   return (
     <div ref={containerRef} style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: '#F8FAFD' }}>
 
-      {/* ── Minimal toolbar ── */}
+      {/* ── Toolbar ── */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px',
         background: '#fff', borderBottom: `1px solid ${BORDER}`, flexShrink: 0,
@@ -288,8 +292,9 @@ function DocViewer({ url, title, fileType }: { url: string; title: string; fileT
         >
           <IcDownload size={14} color="#374151" />
         </a>
-        <button onClick={toggleFullscreen} title={isFullscreen ? 'Выйти из полноэкранного режима' : 'На весь экран'}
-          style={{ width: 30, height: 30, borderRadius: 6, background: '#F3F4F6', border: 'none', color: '#374151', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+        <button onClick={toggleFullscreen}
+          title={isFullscreen ? 'Выйти из полноэкранного режима' : 'На весь экран'}
+          style={{ width: 30, height: 30, borderRadius: 6, background: '#F3F4F6', border: 'none', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
           {isFullscreen ? <IcMinimize size={14} color="#374151" /> : <IcMaximize size={14} color="#374151" />}
         </button>
       </div>
@@ -301,12 +306,12 @@ function DocViewer({ url, title, fileType }: { url: string; title: string; fileT
         {loading && !timedOut && (
           <div style={{ position: 'absolute', inset: 0, zIndex: 4, background: '#F8FAFD', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
             <IcPresentation size={48} color="#D1D5DB" />
-            <span style={{ fontSize: 14, color: '#374151', fontWeight: 600 }}>Загрузка документа…</span>
+            <span style={{ fontSize: 14, color: '#374151', fontWeight: 600 }}>Загрузка презентации…</span>
             <div style={{ width: 32, height: 32, borderRadius: '50%', border: `3px solid ${BORDER}`, borderTopColor: BLUE, animation: 'spin 0.8s linear infinite' }} />
           </div>
         )}
 
-        {/* Timed-out / error fallback */}
+        {/* Timed-out fallback */}
         {timedOut && (
           <div style={{ position: 'absolute', inset: 0, zIndex: 4, background: '#F8FAFD', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20, padding: 32 }}>
             <div style={{ width: 72, height: 72, borderRadius: 18, background: '#F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -315,7 +320,7 @@ function DocViewer({ url, title, fileType }: { url: string; title: string; fileT
             <div style={{ textAlign: 'center' }}>
               <div style={{ fontWeight: 700, fontSize: 15, color: '#1F2937', marginBottom: 6 }}>Не удалось загрузить предпросмотр</div>
               <div style={{ fontSize: 13, color: '#6B7280', maxWidth: 300, lineHeight: 1.6 }}>
-                Файл можно скачать и открыть в любой программе для просмотра презентаций.
+                Скачайте файл и откройте в любой программе для просмотра.
               </div>
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
@@ -323,7 +328,7 @@ function DocViewer({ url, title, fileType }: { url: string; title: string; fileT
                 style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 20px', borderRadius: 8, background: BLUE, color: '#fff', textDecoration: 'none', fontSize: 13, fontWeight: 600 }}>
                 <IcDownload size={14} color="#fff" /> Скачать файл
               </a>
-              <button onClick={retry}
+              <button onClick={() => setAttempt(a => a + 1)}
                 style={{ padding: '9px 20px', borderRadius: 8, border: `1px solid ${BORDER}`, background: '#fff', color: '#374151', cursor: 'pointer', fontSize: 13, fontWeight: 500 }}>
                 Повторить
               </button>
@@ -331,7 +336,6 @@ function DocViewer({ url, title, fileType }: { url: string; title: string; fileT
           </div>
         )}
 
-        {/* Iframe — always mounted so it can load in background */}
         <iframe
           key={`${url}-${attempt}`}
           src={viewerUrl}
@@ -339,8 +343,7 @@ function DocViewer({ url, title, fileType }: { url: string; title: string; fileT
           style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
           onLoad={() => { setLoading(false); if (timerRef.current) clearTimeout(timerRef.current); }}
           onError={() => { setLoading(false); setTimedOut(true); }}
-          allow="autoplay"
-          sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
+          allow="autoplay; fullscreen"
         />
       </div>
     </div>
