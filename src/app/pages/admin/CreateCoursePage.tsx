@@ -86,8 +86,16 @@ export default function CreateCoursePage() {
       });
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || 'Ошибка загрузки');
+      const uploadedName = data.name ?? file.name;
+      const nameWithoutExt = uploadedName.replace(/\.[^/.]+$/, '');
       setMaterials(prev => prev.map(m => m.id === matId
-        ? { ...m, url: data.url, fileName: data.name }
+        ? {
+            ...m,
+            url: data.url,
+            fileName: uploadedName,
+            // Auto-fill title from filename if still empty
+            title: m.title.trim() ? m.title : nameWithoutExt,
+          }
         : m
       ));
     } catch (e: any) {
@@ -120,9 +128,13 @@ export default function CreateCoursePage() {
     if (!course) return;
     setTitle(course.title);
     setDesc(course.description);
-    setMaterials(course.lessons.map(l => ({
-      id: l.id, title: l.title, type: l.type as ContentType, url: l.url,
-    })));
+    setMaterials(course.lessons.map(l => {
+      // Derive a display filename from the URL for pre-saved file materials
+      const derivedFileName = l.type !== 'video' && l.url
+        ? decodeURIComponent(l.url.split('/').pop() ?? '') || l.url
+        : undefined;
+      return { id: l.id, title: l.title, type: l.type as ContentType, url: l.url, fileName: derivedFileName };
+    }));
     setQuestions(course.test.questions.map(q => ({
       id: q.id, type: q.type, text: q.text,
       options: q.options ?? [],
@@ -384,14 +396,14 @@ export default function CreateCoursePage() {
                   ) : (
                     <>
                       <label style={{ display: 'block', marginBottom: 6, color: '#374151', fontSize: '12px', fontWeight: 500 }}>
-                        {mat.type === 'pdf' ? 'Загрузить PDF файл *' : 'Загрузить PPTX презентацию *'}
+                        Загрузить документ * <span style={{ color: '#9CA3AF', fontWeight: 400 }}>(PDF, PPTX, PPT, ODP, DOCX…)</span>
                       </label>
 
-                      {/* Hidden file input */}
+                      {/* Hidden file input — accepts PDF, PPTX, PPT, ODP and other document formats */}
                       <input
                         ref={el => fileInputRefs.current[mat.id] = el}
                         type="file"
-                        accept={mat.type === 'pdf' ? '.pdf,application/pdf' : '.pptx,.ppt,application/vnd.openxmlformats-officedocument.presentationml.presentation'}
+                        accept=".pdf,.pptx,.ppt,.odp,.key,.docx,.doc,application/pdf,application/vnd.openxmlformats-officedocument.presentationml.presentation,application/vnd.ms-powerpoint,application/vnd.oasis.opendocument.presentation,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                         style={{ display: 'none' }}
                         onChange={e => {
                           const file = e.target.files?.[0];
@@ -449,12 +461,12 @@ export default function CreateCoursePage() {
                               </>
                             ) : (
                               <>
-                                <div style={{ fontSize: 28 }}>{mat.type === 'pdf' ? '📄' : '📊'}</div>
+                                <div style={{ fontSize: 28 }}>📎</div>
                                 <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151' }}>
-                                  Нажмите для выбора {mat.type === 'pdf' ? 'PDF' : 'PPTX'} файла
+                                  Нажмите для выбора файла
                                 </span>
                                 <span style={{ fontSize: '11.5px', color: '#9CA3AF' }}>
-                                  {mat.type === 'pdf' ? 'Формат: PDF (до 50 МБ)' : 'Формат: PPTX, PPT (до 50 МБ)'}
+                                  PDF, PPTX, PPT, ODP, DOCX и др. — до 50 МБ
                                 </span>
                               </>
                             )}

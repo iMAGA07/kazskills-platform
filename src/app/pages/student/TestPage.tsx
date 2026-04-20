@@ -49,10 +49,19 @@ export default function TestPage() {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       streamRef.current = stream;
-      if (videoRef.current) videoRef.current.srcObject = stream;
       setCameraState('granted');
+      // srcObject is assigned after the video element mounts (see useEffect below)
     } catch { setCameraState('denied'); }
   };
+
+  // Attach the camera stream to the <video> element every time cameraState
+  // changes to 'granted' or when testStarted flips (the video re-mounts).
+  useEffect(() => {
+    if (!streamRef.current) return;
+    if (videoRef.current && !videoRef.current.srcObject) {
+      videoRef.current.srcObject = streamRef.current;
+    }
+  });
 
   // Keep ref in sync so the timer always calls the latest handleSubmit
   // (avoids stale closure capturing old `answers` state)
