@@ -498,6 +498,63 @@ export const Team = IcTeam;
 export const Warning = IcWarning;
 export const Close = IcClose;
 
+export const IcMaximize = ({ size = 18, color = 'currentColor', style, className }: P) => (
+  <svg {...mk(size, color, style, className)} viewBox="0 0 20 20">
+    <path d="M3 7.5V3.5H7" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M3 3.5L7.5 8" stroke={color} strokeWidth="1.4" strokeLinecap="round"/>
+    <path d="M17 7.5V3.5H13" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M17 3.5L12.5 8" stroke={color} strokeWidth="1.4" strokeLinecap="round"/>
+    <path d="M3 12.5V16.5H7" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M3 16.5L7.5 12" stroke={color} strokeWidth="1.4" strokeLinecap="round"/>
+    <path d="M17 12.5V16.5H13" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M17 16.5L12.5 12" stroke={color} strokeWidth="1.4" strokeLinecap="round"/>
+  </svg>
+);
+
+export const IcMinimize = ({ size = 18, color = 'currentColor', style, className }: P) => (
+  <svg {...mk(size, color, style, className)} viewBox="0 0 20 20">
+    <path d="M7.5 3V7H3.5" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M3 3.5L7.5 8" stroke={color} strokeWidth="1.4" strokeLinecap="round"/>
+    <path d="M12.5 3V7H16.5" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M17 3.5L12.5 8" stroke={color} strokeWidth="1.4" strokeLinecap="round"/>
+    <path d="M7.5 17V13H3.5" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M3 16.5L7.5 12" stroke={color} strokeWidth="1.4" strokeLinecap="round"/>
+    <path d="M12.5 17V13H16.5" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M17 16.5L12.5 12" stroke={color} strokeWidth="1.4" strokeLinecap="round"/>
+  </svg>
+);
+
+export const IcUpload = ({ size = 18, color = 'currentColor', style, className }: P) => (
+  <svg {...mk(size, color, style, className)} viewBox="0 0 20 20">
+    <path d="M10 13V3M10 3L7 6M10 3L13 6" stroke={color} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M4 14V16.5C4 17 4.5 17.5 5 17.5H15C15.5 17.5 16 17 16 16.5V14" stroke={color} strokeWidth="1.5" strokeLinecap="round"/>
+  </svg>
+);
+
+export const IcSettings = ({ size = 18, color = 'currentColor', style, className }: P) => (
+  <svg {...mk(size, color, style, className)} viewBox="0 0 20 20">
+    <circle cx="10" cy="10" r="2.8" stroke={color} strokeWidth="1.4"/>
+    <path d="M10 2.5V4M10 16V17.5M4.1 5.1L5.2 6.2M14.8 13.8L15.9 14.9M2.5 10H4M16 10H17.5M4.1 14.9L5.2 13.8M14.8 6.2L15.9 5.1" stroke={color} strokeWidth="1.4" strokeLinecap="round"/>
+  </svg>
+);
+
+export const IcAlarm = ({ size = 18, color = 'currentColor', style, className }: P) => (
+  <svg {...mk(size, color, style, className)} viewBox="0 0 20 20">
+    <circle cx="10" cy="11.5" r="6.5" stroke={color} strokeWidth="1.5"/>
+    <path d="M10 8V12L12.5 13.5" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M4.5 4L2.5 6M15.5 4L17.5 6" stroke={color} strokeWidth="1.5" strokeLinecap="round"/>
+    <path d="M8 2.5H12" stroke={color} strokeWidth="1.4" strokeLinecap="round"/>
+  </svg>
+);
+
+export const IcRocket = ({ size = 18, color = 'currentColor', style, className }: P) => (
+  <svg {...mk(size, color, style, className)} viewBox="0 0 20 20">
+    <path d="M10 3.5C10 3.5 13.5 4.5 14.5 8.5L12.5 10.5H7.5L5.5 8.5C6.5 4.5 10 3.5 10 3.5Z" stroke={color} strokeWidth="1.4" strokeLinejoin="round"/>
+    <path d="M7.5 10.5L6 13.5L8.5 13L10 16L11.5 13L14 13.5L12.5 10.5" stroke={color} strokeWidth="1.3" strokeLinejoin="round"/>
+    <circle cx="10" cy="8" r="1.3" stroke={color} strokeWidth="1.2"/>
+  </svg>
+);
+
 export const IcFileText = ({ size = 18, color = 'currentColor', style, className }: P) => (
   <svg {...mk(size, color, style, className)} viewBox="0 0 20 20">
     <path d="M5 2.5H12.5L16.5 6.5V17.5H5V2.5Z" stroke={color} strokeWidth="1.5" strokeLinejoin="round"/>

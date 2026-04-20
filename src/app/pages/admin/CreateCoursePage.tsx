@@ -5,6 +5,7 @@ import {
   IcCheck as Check, IcWarning as AlertCircle, IcSave as Save,
   IcGrip as GripVertical, IcYoutube as Youtube, IcDocument as FileText,
   IcPresentation as Presentation, IcClose as XIcon, IcDownload as UploadIcon,
+  IcUpload, IcSettings,
 } from '../../components/Icons';
 import { useLanguage } from '../../context/LanguageContext';
 import { useCourses, Lesson, Question, QOption, CourseInput, QuestionType } from '../../context/CoursesContext';
@@ -455,13 +456,13 @@ export default function CreateCoursePage() {
                           >
                             {uploadingIds.has(mat.id) ? (
                               <>
-                                <div style={{ fontSize: 24 }}>⏳</div>
+                                <div style={{ width: 28, height: 28, border: '3px solid #E0E7FF', borderTop: `3px solid ${BLUE}`, borderRadius: '50%', animation: 'spin 0.8s linear infinite', margin: '0 auto 4px' }} />
                                 <span style={{ fontSize: '13px', fontWeight: 600, color: BLUE }}>Загрузка файла...</span>
                                 <span style={{ fontSize: '11.5px', color: '#6B7280' }}>Пожалуйста, подождите</span>
                               </>
                             ) : (
                               <>
-                                <div style={{ fontSize: 28 }}>📎</div>
+                                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 2 }}><IcUpload size={28} color="#374151" /></div>
                                 <span style={{ fontSize: '13px', fontWeight: 600, color: '#374151' }}>
                                   Нажмите для выбора файла
                                 </span>

@@ -2,7 +2,7 @@ import React from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router';
 import { useLanguage } from '../../context/LanguageContext';
 import { useCourses } from '../../context/CoursesContext';
-import { IcCheckCircle, IcXCircle, IcMedal, IcRefresh, IcArrowLeft, IcTimer, IcTarget, IcTrendingUp } from '../../components/Icons';
+import { IcCheckCircle, IcXCircle, IcMedal, IcRefresh, IcArrowLeft, IcTimer, IcTarget, IcTrendingUp, IcAlarm } from '../../components/Icons';
 
 export default function ResultsPage() {
   const { courseId } = useParams<{ courseId: string }>();
@@ -35,7 +35,7 @@ export default function ResultsPage() {
         <div style={{ padding: '40px', textAlign: 'center' }}>
           {autoSubmit && (
             <div style={{ padding: '8px 16px', borderRadius: '20px', marginBottom: '20px', background: '#FFFBEB', border: '1px solid #FDE68A', display: 'inline-block' }}>
-              <span style={{ fontSize: '13px', color: '#D97706' }}>⏰ Тест завершён автоматически — время вышло</span>
+              <span style={{ fontSize: '13px', color: '#D97706', display: 'flex', alignItems: 'center', gap: 5 }}><IcAlarm size={14} color="#D97706" /> Тест завершён автоматически — время вышло</span>
             </div>
           )}
           {/* Score ring */}

@@ -4,6 +4,7 @@ import {
   IcCamera as Camera, IcCameraOff as CameraOff, IcWarning as AlertTriangle, IcTimer as Timer,
   IcChevronLeft as ChevronLeft, IcChevronRight as ChevronRight,
   IcCheckCircle as CheckCircle2, IcArrowRight as Send, IcYoutube as Video, IcWarning as AlertCircle,
+  IcRocket, IcSettings,
 } from '../../components/Icons';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
@@ -226,7 +227,7 @@ export default function TestPage() {
                     boxShadow: '0 4px 16px rgba(5,150,105,0.3)',
                   }}
                 >
-                  🚀 Начать тест
+                  <IcRocket size={16} color="#fff" style={{ display: 'inline', verticalAlign: 'middle', marginRight: 6 }} /> Начать тест
                 </button>
               </>
             )}
@@ -246,7 +247,7 @@ export default function TestPage() {
                 <p style={{ textAlign: 'center', color: '#6B7280', fontSize: 14, lineHeight: 1.7, margin: '0 0 20px' }}>{t('test.camera_denied_desc')}</p>
                 <div style={{ padding: 16, borderRadius: 10, background: '#FEF2F2', border: '1px solid #FECACA', marginBottom: 20 }}>
                   <p style={{ margin: 0, fontSize: 13, color: '#DC2626', lineHeight: 1.5 }}>
-                    ⚙️ Настройки браузера → Конфиденциальность → Камера → Разрешить для этого сайта
+                    <IcSettings size={14} color="#DC2626" style={{ display: 'inline', verticalAlign: 'middle', marginRight: 5 }} /> Настройки браузера → Конфиденциальность → Камера → Разрешить для этого сайта
                   </p>
                 </div>
                 <button onClick={requestCamera} style={{ width: '100%', padding: 12, marginBottom: 10, borderRadius: 10, border: '1.5px solid #FECACA', background: '#FEF2F2', color: '#DC2626', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
