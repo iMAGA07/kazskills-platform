@@ -233,24 +233,26 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
   );
 }
 
-// ─── Office / Doc Viewer (MS Office Online for pptx/docx, Google Docs fallback) ──
+// ─── Doc Viewer (Google Docs embedded — clean, no 3rd-party branding) ────────
 function DocViewer({ url, title, fileType }: { url: string; title: string; fileType: string }) {
   const containerRef   = useRef<HTMLDivElement>(null);
+  const timerRef       = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [attempt,      setAttempt]      = useState(0);   // bumping re-mounts iframe
   const [loading,      setLoading]      = useState(true);
-  const [error,        setError]        = useState(false);
+  const [timedOut,     setTimedOut]     = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
-  // MS Office Online handles pptx/ppt/docx/doc/xlsx/xls natively with slide UI
-  const isMsOffice = ['pptx', 'ppt', 'ppsx', 'potx', 'docx', 'doc', 'xlsx', 'xls'].includes(fileType);
-  const viewerUrl  = isMsOffice
-    ? `https://view.officeapps.live.com/op/embed.aspx?src=${encodeURIComponent(url)}`
-    : `https://docs.google.com/gview?url=${encodeURIComponent(url)}&embedded=true`;
+  // Google Docs viewer — minimal UI, no Office branding
+  const viewerUrl = `https://docs.google.com/gview?url=${encodeURIComponent(url)}&embedded=true`;
 
+  // Reset & start timeout whenever attempt changes
   useEffect(() => {
-    setLoading(true); setError(false);
-    const t = setTimeout(() => setError(true), 20000);
-    return () => clearTimeout(t);
-  }, [url]);
+    setLoading(true);
+    setTimedOut(false);
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setTimedOut(true), 18000);
+    return () => { if (timerRef.current) clearTimeout(timerRef.current); };
+  }, [url, attempt]);
 
   useEffect(() => {
     const h = () => setIsFullscreen(!!document.fullscreenElement);
@@ -263,69 +265,82 @@ function DocViewer({ url, title, fileType }: { url: string; title: string; fileT
     else document.exitFullscreen();
   };
 
-  return (
-    <div ref={containerRef} style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: '#3A3A3C' }}>
+  const retry = () => setAttempt(a => a + 1);
 
-      {/* Toolbar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', background: 'rgba(0,0,0,0.7)', flexShrink: 0 }}>
-        <IcPresentation size={16} color="rgba(255,255,255,0.5)" />
-        <span style={{ flex: 1, fontSize: 12, color: 'rgba(255,255,255,0.55)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+  return (
+    <div ref={containerRef} style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: '#F8FAFD' }}>
+
+      {/* ── Minimal toolbar ── */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8, padding: '6px 12px',
+        background: '#fff', borderBottom: `1px solid ${BORDER}`, flexShrink: 0,
+      }}>
+        <IcPresentation size={15} color={BLUE} />
+        <span style={{ flex: 1, fontSize: 12, color: '#374151', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {title}
         </span>
+        <span style={{ fontSize: 11, color: '#9CA3AF', marginRight: 4, flexShrink: 0 }}>
+          {fileType.toUpperCase()}
+        </span>
         <a href={url} download target="_blank" rel="noopener noreferrer"
-          style={{ width: 34, height: 34, borderRadius: 7, background: 'rgba(255,255,255,0.14)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none' }}
+          style={{ width: 30, height: 30, borderRadius: 6, background: '#F3F4F6', color: '#374151', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none', flexShrink: 0 }}
           title="Скачать файл"
         >
-          <IcDownload size={16} color="#fff" />
+          <IcDownload size={14} color="#374151" />
         </a>
-        <TBtn onClick={toggleFullscreen} title={isFullscreen ? 'Выйти из полноэкранного режима' : 'Полноэкранный режим'}>
-          {isFullscreen ? <IcMinimize size={16} color="currentColor" /> : <IcMaximize size={16} color="currentColor" />}
-        </TBtn>
+        <button onClick={toggleFullscreen} title={isFullscreen ? 'Выйти из полноэкранного режима' : 'На весь экран'}
+          style={{ width: 30, height: 30, borderRadius: 6, background: '#F3F4F6', border: 'none', color: '#374151', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0 }}>
+          {isFullscreen ? <IcMinimize size={14} color="#374151" /> : <IcMaximize size={14} color="#374151" />}
+        </button>
       </div>
 
-      {/* Loading */}
-      {loading && !error && (
-        <div style={{ position: 'absolute', inset: '48px 0 0 0', zIndex: 5, background: '#F8FAFD', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14 }}>
-          <IcPresentation size={52} color="#D1D5DB" />
-          <span style={{ fontSize: 14, color: '#374151', fontWeight: 600 }}>Загрузка документа…</span>
-          <span style={{ fontSize: 12, color: '#9CA3AF' }}>
-            {isMsOffice ? 'Microsoft Office Online Viewer' : 'Google Docs Viewer'}
-          </span>
-          <div style={{ width: 36, height: 36, borderRadius: '50%', border: `3px solid #FDE68A`, borderTopColor: '#D97706', animation: 'spin 0.8s linear infinite' }} />
-          <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-        </div>
-      )}
+      {/* ── Content ── */}
+      <div style={{ flex: 1, position: 'relative', background: '#F8FAFD' }}>
 
-      {/* Error */}
-      {error && (
-        <div style={{ position: 'absolute', inset: '48px 0 0 0', zIndex: 5, background: '#F8FAFD', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, padding: 32 }}>
-          <IcPresentation size={52} color="#D1D5DB" />
-          <div style={{ textAlign: 'center' }}>
-            <div style={{ fontWeight: 700, color: '#374151', marginBottom: 6 }}>Предпросмотр недоступен</div>
-            <div style={{ fontSize: 13, color: '#6B7280', maxWidth: 320, lineHeight: 1.5 }}>
-              Не удалось загрузить файл через онлайн-просмотрщик. Скачайте и откройте локально.
+        {/* Loading overlay */}
+        {loading && !timedOut && (
+          <div style={{ position: 'absolute', inset: 0, zIndex: 4, background: '#F8FAFD', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 16 }}>
+            <IcPresentation size={48} color="#D1D5DB" />
+            <span style={{ fontSize: 14, color: '#374151', fontWeight: 600 }}>Загрузка документа…</span>
+            <div style={{ width: 32, height: 32, borderRadius: '50%', border: `3px solid ${BORDER}`, borderTopColor: BLUE, animation: 'spin 0.8s linear infinite' }} />
+          </div>
+        )}
+
+        {/* Timed-out / error fallback */}
+        {timedOut && (
+          <div style={{ position: 'absolute', inset: 0, zIndex: 4, background: '#F8FAFD', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 20, padding: 32 }}>
+            <div style={{ width: 72, height: 72, borderRadius: 18, background: '#F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <IcPresentation size={36} color="#9CA3AF" />
+            </div>
+            <div style={{ textAlign: 'center' }}>
+              <div style={{ fontWeight: 700, fontSize: 15, color: '#1F2937', marginBottom: 6 }}>Не удалось загрузить предпросмотр</div>
+              <div style={{ fontSize: 13, color: '#6B7280', maxWidth: 300, lineHeight: 1.6 }}>
+                Файл можно скачать и открыть в любой программе для просмотра презентаций.
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <a href={url} download target="_blank" rel="noopener noreferrer"
+                style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '9px 20px', borderRadius: 8, background: BLUE, color: '#fff', textDecoration: 'none', fontSize: 13, fontWeight: 600 }}>
+                <IcDownload size={14} color="#fff" /> Скачать файл
+              </a>
+              <button onClick={retry}
+                style={{ padding: '9px 20px', borderRadius: 8, border: `1px solid ${BORDER}`, background: '#fff', color: '#374151', cursor: 'pointer', fontSize: 13, fontWeight: 500 }}>
+                Повторить
+              </button>
             </div>
           </div>
-          <a href={url} target="_blank" rel="noopener noreferrer" download
-            style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 20px', borderRadius: 8, background: NAVY, color: '#fff', textDecoration: 'none', fontSize: 13, fontWeight: 600 }}>
-            <IcDownload size={15} color="#fff" /> Скачать файл
-          </a>
-          <button onClick={() => { setError(false); setLoading(true); }}
-            style={{ background: 'none', border: `1px solid ${BORDER}`, borderRadius: 7, padding: '7px 16px', fontSize: 12, color: '#6B7280', cursor: 'pointer' }}>
-            Попробовать снова
-          </button>
-        </div>
-      )}
+        )}
 
-      <div style={{ flex: 1, position: 'relative' }}>
+        {/* Iframe — always mounted so it can load in background */}
         <iframe
-          key={viewerUrl}
+          key={`${url}-${attempt}`}
           src={viewerUrl}
           title={title}
-          style={{ width: '100%', height: '100%', border: 'none', display: error ? 'none' : 'block' }}
-          onLoad={() => setLoading(false)}
-          onError={() => { setLoading(false); setError(true); }}
-          allow="autoplay; fullscreen"
+          style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+          onLoad={() => { setLoading(false); if (timerRef.current) clearTimeout(timerRef.current); }}
+          onError={() => { setLoading(false); setTimedOut(true); }}
+          allow="autoplay"
+          sandbox="allow-scripts allow-same-origin allow-popups allow-forms"
         />
       </div>
     </div>
