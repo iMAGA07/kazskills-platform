@@ -59,36 +59,49 @@ function makeTable(header: TableRow, rows: TableRow[]) {
 }
 
 // ─── Report generators ────────────────────────────────────────────────────────
+// Shared date formatter
+const fmtDate = (iso: string) =>
+  new Date(iso).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' });
+const todayStr = () => new Date().toLocaleDateString('ru-RU');
+const fileDate = () => new Date().toLocaleDateString('ru-RU').replace(/\./g, '-');
+
 async function generateZayavka(
   org: string,
   users: ReturnType<typeof useUsers>['users'],
   courses: ReturnType<typeof useCourses>['courses'],
   progressMap: Record<string, UserProgress | null>,
 ) {
+  // All students from org — no enrollment filter (all org members take all courses)
   const students = users.filter(u => u.role === 'student' && u.organization === org);
+  const published = courses.filter(c => c.published);
+
   const children: (Paragraph | Table)[] = [
     new Paragraph({
-      text: `Заявка · ${org}`,
       heading: HeadingLevel.HEADING_1,
-      spacing: { after: 200 },
+      spacing: { after: 100 },
+      children: [new TextRun({ text: `Заявка`, bold: true, size: 32 })],
     }),
     new Paragraph({
-      text: `Дата формирования: ${new Date().toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })}`,
+      spacing: { after: 80 },
+      children: [new TextRun({ text: `Организация: ${org}`, size: 22, bold: true })],
+    }),
+    new Paragraph({
       spacing: { after: 400 },
-      children: [new TextRun({ text: `Дата формирования: ${new Date().toLocaleDateString('ru-RU')}`, size: 20, color: '555555' })],
+      children: [new TextRun({ text: `Дата формирования: ${todayStr()}`, size: 20, color: '666666' })],
     }),
   ];
 
-  const published = courses.filter(c => c.published);
+  if (students.length === 0) {
+    children.push(new Paragraph({ children: [new TextRun({ text: 'Слушатели не найдены для данной организации.', size: 22, color: 'CC0000' })] }));
+  }
 
   for (const course of published) {
-    const enrolled = students.filter(u => u.enrolledCourses.includes(course.id));
-    if (enrolled.length === 0) continue;
-
     children.push(new Paragraph({
-      spacing: { before: 400, after: 160 },
+      spacing: { before: 500, after: 160 },
       children: [new TextRun({ text: `«${course.title}»`, bold: true, size: 24 })],
     }));
+
+    if (students.length === 0) continue;
 
     const hdr = new TableRow({
       tableHeader: true,
@@ -100,12 +113,12 @@ async function generateZayavka(
       ],
     });
 
-    const rows = enrolled.map((u, i) => {
+    const rows = students.map((u, i) => {
       const prog = progressMap[`${u.id}:${course.id}`];
-      const passing = prog?.attempts?.filter(a => a.passed).sort((a, b) => b.completedAt.localeCompare(a.completedAt))[0];
-      const date = passing
-        ? new Date(passing.completedAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
-        : '—';
+      const passing = prog?.attempts
+        ?.filter(a => a.passed)
+        .sort((a, b) => b.completedAt.localeCompare(a.completedAt))[0];
+      const date = passing ? fmtDate(passing.completedAt) : '—';
       return new TableRow({ children: [
         dataCell(String(i + 1), true),
         dataCell(u.name),
@@ -119,7 +132,7 @@ async function generateZayavka(
 
   const doc = new Document({ sections: [{ children }] });
   const blob = await Packer.toBlob(doc);
-  downloadBlob(blob, `Заявка_${org}_${new Date().toLocaleDateString('ru-RU').replace(/\./g, '-')}.docx`);
+  downloadBlob(blob, `Заявка_${org}_${fileDate()}.docx`);
 }
 
 async function generateLoginsPasswords(
@@ -127,29 +140,37 @@ async function generateLoginsPasswords(
   users: ReturnType<typeof useUsers>['users'],
   courses: ReturnType<typeof useCourses>['courses'],
 ) {
+  // All students from org
   const students = users.filter(u => u.role === 'student' && u.organization === org);
+  const published = courses.filter(c => c.published);
+
   const children: (Paragraph | Table)[] = [
     new Paragraph({
-      text: `Логины и пароли · ${org}`,
       heading: HeadingLevel.HEADING_1,
-      spacing: { after: 200 },
+      spacing: { after: 100 },
+      children: [new TextRun({ text: `Логины и пароли`, bold: true, size: 32 })],
+    }),
+    new Paragraph({
+      spacing: { after: 80 },
+      children: [new TextRun({ text: `Организация: ${org}`, size: 22, bold: true })],
     }),
     new Paragraph({
       spacing: { after: 400 },
-      children: [new TextRun({ text: `Дата формирования: ${new Date().toLocaleDateString('ru-RU')}`, size: 20, color: '555555' })],
+      children: [new TextRun({ text: `Дата формирования: ${todayStr()}`, size: 20, color: '666666' })],
     }),
   ];
 
-  const published = courses.filter(c => c.published);
+  if (students.length === 0) {
+    children.push(new Paragraph({ children: [new TextRun({ text: 'Слушатели не найдены для данной организации.', size: 22, color: 'CC0000' })] }));
+  }
 
   for (const course of published) {
-    const enrolled = students.filter(u => u.enrolledCourses.includes(course.id));
-    if (enrolled.length === 0) continue;
-
     children.push(new Paragraph({
-      spacing: { before: 400, after: 160 },
+      spacing: { before: 500, after: 160 },
       children: [new TextRun({ text: `«${course.title}»`, bold: true, size: 24 })],
     }));
+
+    if (students.length === 0) continue;
 
     const hdr = new TableRow({
       tableHeader: true,
@@ -157,12 +178,12 @@ async function generateLoginsPasswords(
         hdrCell('№', 600),
         hdrCell('Ф. И. О', 2600),
         hdrCell('Должность', 2200),
-        hdrCell('Логин', 1600),
-        hdrCell('Пароль', 1400),
+        hdrCell('Логин', 1800),
+        hdrCell('Пароль', 1200),
       ],
     });
 
-    const rows = enrolled.map((u, i) => new TableRow({ children: [
+    const rows = students.map((u, i) => new TableRow({ children: [
       dataCell(String(i + 1), true),
       dataCell(u.name),
       dataCell(u.position || '—'),
@@ -175,7 +196,7 @@ async function generateLoginsPasswords(
 
   const doc = new Document({ sections: [{ children }] });
   const blob = await Packer.toBlob(doc);
-  downloadBlob(blob, `Логины_пароли_${org}_${new Date().toLocaleDateString('ru-RU').replace(/\./g, '-')}.docx`);
+  downloadBlob(blob, `Логины_пароли_${org}_${fileDate()}.docx`);
 }
 
 async function generateStatistika(
@@ -189,13 +210,17 @@ async function generateStatistika(
 
   const children: (Paragraph | Table)[] = [
     new Paragraph({
-      text: `Статистика · ${org}`,
       heading: HeadingLevel.HEADING_1,
-      spacing: { after: 200 },
+      spacing: { after: 100 },
+      children: [new TextRun({ text: `Статистика`, bold: true, size: 32 })],
+    }),
+    new Paragraph({
+      spacing: { after: 80 },
+      children: [new TextRun({ text: `Организация: ${org}`, size: 22, bold: true })],
     }),
     new Paragraph({
       spacing: { after: 400 },
-      children: [new TextRun({ text: `Дата формирования: ${new Date().toLocaleDateString('ru-RU')}`, size: 20, color: '555555' })],
+      children: [new TextRun({ text: `Дата формирования: ${todayStr()}`, size: 20, color: '666666' })],
     }),
   ];
 
@@ -227,9 +252,13 @@ async function generateStatistika(
 
   children.push(makeTable(hdr, rows));
 
+  if (students.length === 0) {
+    children.push(new Paragraph({ children: [new TextRun({ text: 'Слушатели не найдены для данной организации.', size: 22, color: 'CC0000' })] }));
+  }
+
   const doc = new Document({ sections: [{ children }] });
   const blob = await Packer.toBlob(doc);
-  downloadBlob(blob, `Статистика_${org}_${new Date().toLocaleDateString('ru-RU').replace(/\./g, '-')}.docx`);
+  downloadBlob(blob, `Статистика_${org}_${fileDate()}.docx`);
 }
 
 // ─── Report Modal ─────────────────────────────────────────────────────────────
@@ -505,67 +534,55 @@ export default function AdminDashboardPage() {
         ))}
       </div>
 
-      {/* Main action cards */}
+      {/* Main action cards — unified style */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
-        {/* Add user */}
-        <div style={{
-          background: '#fff', borderRadius: 16, padding: '32px 28px',
-          boxShadow: '0 2px 12px rgba(43,92,230,0.08)', border: `1.5px solid ${BORDER}`,
-          display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 12,
-        }}>
-          <div style={{ width: 52, height: 52, borderRadius: 14, background: '#EBF1FE', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <IcUserPlus size={26} color={BLUE} />
-          </div>
-          <div>
-            <div style={{ fontSize: 17, fontWeight: 700, color: '#0F1629', marginBottom: 6 }}>Добавить пользователя</div>
-            <div style={{ fontSize: 13, color: MUTED, lineHeight: 1.5 }}>
-              ФИО, место работы, должность, логин и пароль. Назначьте курсы непосредственно при создании.
+        {[
+          {
+            icon: IcUserPlus,
+            title: 'Добавить пользователя',
+            desc: 'ФИО, место работы, должность, логин и пароль. Назначьте курсы непосредственно при создании.',
+            btn: 'Добавить пользователя',
+            btnIcon: IcUserPlus,
+            onClick: () => navigate('/admin/users'),
+          },
+          {
+            icon: IcDocument,
+            title: 'Сформировать отчёт',
+            desc: 'Три вида отчётов в формате Word: заявка, логины и пароли, статистика по курсам.',
+            btn: 'Сформировать отчёт',
+            btnIcon: IcDownload,
+            onClick: () => setReportOpen(true),
+          },
+        ].map(({ icon: Icon, title, desc, btn, btnIcon: BtnIcon, onClick }) => (
+          <div key={title} style={{
+            background: '#fff', borderRadius: 16, padding: '28px 24px',
+            boxShadow: '0 2px 12px rgba(43,92,230,0.07)', border: `1.5px solid ${BORDER}`,
+            display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 14,
+          }}>
+            <div style={{ width: 52, height: 52, borderRadius: 14, background: '#EBF1FE', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <Icon size={26} color={BLUE} />
             </div>
-          </div>
-          <button
-            onClick={() => navigate('/admin/users')}
-            style={{
-              marginTop: 4, padding: '10px 22px', borderRadius: 9, border: 'none',
-              background: BLUE, color: '#fff', fontSize: 13.5, fontWeight: 600, cursor: 'pointer',
-              boxShadow: '0 2px 10px rgba(43,92,230,0.3)',
-            }}
-            onMouseEnter={e => (e.currentTarget.style.background = '#2450CC')}
-            onMouseLeave={e => (e.currentTarget.style.background = BLUE)}
-          >
-            <IcUserPlus size={14} color="#fff" style={{ marginRight: 6, verticalAlign: 'middle' }} />
-            Добавить пользователя
-          </button>
-        </div>
-
-        {/* Report */}
-        <div style={{
-          background: '#fff', borderRadius: 16, padding: '32px 28px',
-          boxShadow: '0 2px 12px rgba(27,61,132,0.08)', border: `1.5px solid ${BORDER}`,
-          display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 12,
-        }}>
-          <div style={{ width: 52, height: 52, borderRadius: 14, background: '#F0F4FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <IcDocument size={26} color={NAVY} />
-          </div>
-          <div>
-            <div style={{ fontSize: 17, fontWeight: 700, color: '#0F1629', marginBottom: 6 }}>Сформировать отчёт</div>
-            <div style={{ fontSize: 13, color: MUTED, lineHeight: 1.5 }}>
-              Три вида отчётов в формате Word: заявка, логины и пароли, статистика по курсам.
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#0F1629', marginBottom: 6 }}>{title}</div>
+              <div style={{ fontSize: 13, color: MUTED, lineHeight: 1.6 }}>{desc}</div>
             </div>
+            <button
+              onClick={onClick}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 8,
+                padding: '10px 20px', borderRadius: 9, border: 'none',
+                background: BLUE, color: '#fff', fontSize: 13.5, fontWeight: 600,
+                cursor: 'pointer', boxShadow: '0 2px 10px rgba(43,92,230,0.28)',
+                whiteSpace: 'nowrap',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.background = '#2450CC')}
+              onMouseLeave={e => (e.currentTarget.style.background = BLUE)}
+            >
+              <BtnIcon size={15} color="#fff" />
+              {btn}
+            </button>
           </div>
-          <button
-            onClick={() => setReportOpen(true)}
-            style={{
-              marginTop: 4, padding: '10px 22px', borderRadius: 9, border: 'none',
-              background: NAVY, color: '#fff', fontSize: 13.5, fontWeight: 600, cursor: 'pointer',
-              boxShadow: '0 2px 10px rgba(27,61,132,0.25)',
-            }}
-            onMouseEnter={e => (e.currentTarget.style.background = '#163272')}
-            onMouseLeave={e => (e.currentTarget.style.background = NAVY)}
-          >
-            <IcDownload size={14} color="#fff" style={{ marginRight: 6, verticalAlign: 'middle' }} />
-            Сформировать отчёт
-          </button>
-        </div>
+        ))}
       </div>
 
       {/* Secondary actions */}
