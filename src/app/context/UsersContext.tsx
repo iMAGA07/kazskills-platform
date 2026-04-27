@@ -205,9 +205,11 @@ const INITIAL_USERS: ManagedUser[] = [
   },
 ];
 
+type NewUserInput = Omit<ManagedUser, 'id' | 'createdAt' | 'completedCourses'> & { enrolledCourses?: string[] };
+
 interface UsersContextType {
   users: ManagedUser[];
-  addUser: (user: Omit<ManagedUser, 'id' | 'createdAt' | 'enrolledCourses' | 'completedCourses'>) => void;
+  addUser: (user: NewUserInput) => void;
   updateUser: (id: string, updates: Partial<ManagedUser>) => void;
   deleteUser: (id: string) => void;
   toggleStatus: (id: string) => void;
@@ -236,12 +238,12 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem('kazskills_managed_users', JSON.stringify(updated));
   };
 
-  const addUser = useCallback((userData: Omit<ManagedUser, 'id' | 'createdAt' | 'enrolledCourses' | 'completedCourses'>) => {
+  const addUser = useCallback((userData: NewUserInput) => {
     const newUser: ManagedUser = {
       ...userData,
       id: `user-${Date.now()}`,
       createdAt: new Date().toISOString().slice(0, 10),
-      enrolledCourses: [],
+      enrolledCourses: userData.enrolledCourses ?? [],
       completedCourses: [],
     };
     persist([...users, newUser]);

@@ -112,6 +112,8 @@ export default function CreateCoursePage() {
 
   // Step 2 – Materials
   const [materials, setMaterials] = useState<MaterialDraft[]>([newMaterial()]);
+  const [showMatErrors, setShowMatErrors] = useState(false);
+  const materialRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   // Step 3 – Test questions
   const [questions, setQuestions] = useState<QuestionDraft[]>([newQuestion()]);
@@ -303,8 +305,14 @@ export default function CreateCoursePage() {
             Добавьте учебные материалы: видео с YouTube, PDF-документы или PPTX-презентации
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {materials.map((mat, idx) => (
-              <div key={mat.id} style={{ padding: 18, borderRadius: 10, background: FAINT, border: `1px solid ${BORDER}` }}>
+            {materials.map((mat, idx) => {
+              const matInvalid = showMatErrors && (!mat.title.trim() || !mat.url.trim());
+              return (
+              <div
+                key={mat.id}
+                ref={el => materialRefs.current[mat.id] = el}
+                style={{ padding: 18, borderRadius: 10, background: FAINT, border: `1.5px solid ${matInvalid ? RED : BORDER}`, transition: 'border-color 0.2s' }}
+              >
                 {/* Header */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
                   <GripVertical size={15} color="#D1D5DB" />
@@ -482,8 +490,16 @@ export default function CreateCoursePage() {
                     </>
                   )}
                 </div>
+                {/* Validation hint for this material */}
+                {showMatErrors && (!mat.title.trim() || !mat.url.trim()) && (
+                  <div style={{ marginTop: 8, fontSize: '12px', color: RED, display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <AlertCircle size={12} color={RED} />
+                    {!mat.title.trim() ? 'Введите название материала' : mat.type === 'video' ? 'Вставьте ссылку YouTube' : 'Загрузите файл'}
+                  </div>
+                )}
               </div>
-            ))}
+            );
+            })}
 
             <button
               onClick={addMaterial}
@@ -794,14 +810,27 @@ export default function CreateCoursePage() {
 
         {step < 3 ? (
           <button
-            onClick={() => canNext() && setStep(step + 1)}
-            disabled={!canNext()}
+            onClick={() => {
+              if (canNext()) {
+                setShowMatErrors(false);
+                setStep(step + 1);
+              } else if (step === 1) {
+                // Highlight and scroll to first incomplete material
+                setShowMatErrors(true);
+                const first = materials.find(m =>
+                  !m.title.trim() || (m.type === 'video' ? !m.url.trim() : !m.url.trim())
+                );
+                if (first && materialRefs.current[first.id]) {
+                  materialRefs.current[first.id]!.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+              }
+            }}
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
               padding: '11px 28px', borderRadius: 9,
               background: canNext() ? BLUE : '#E5E7EB',
               border: 'none', color: canNext() ? '#fff' : '#9CA3AF',
-              fontSize: '13.5px', fontWeight: 600, cursor: canNext() ? 'pointer' : 'not-allowed',
+              fontSize: '13.5px', fontWeight: 600, cursor: 'pointer',
               boxShadow: canNext() ? '0 2px 12px rgba(43,92,230,0.3)' : 'none',
               transition: 'all 0.15s',
             }}

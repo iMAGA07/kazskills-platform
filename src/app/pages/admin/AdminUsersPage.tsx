@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useUsers, type ManagedUser } from '../../context/UsersContext';
+import { useCourses } from '../../context/CoursesContext';
 import {
   IcSearch, IcFilter, IcUserPlus, IcPerson, IcShield, IcTeam,
   IcBook, IcMedal, IcEdit, IcTrash, IcClose, IcBuilding,
@@ -23,11 +24,13 @@ interface FormData {
   position: string;
   phone: string;
   status: 'active' | 'blocked';
+  assignedCourses: string[];
 }
 
 const EMPTY_FORM: FormData = {
   name: '', email: '', password: '', role: 'student',
   organization: '', department: '', position: '', phone: '', status: 'active',
+  assignedCourses: [],
 };
 
 const ROLE_META: Record<string, { label: string; color: string; bg: string }> = {
@@ -184,6 +187,9 @@ function UserFormModal({ open, onClose, editUser, organizations }: {
   organizations: string[];
 }) {
   const { addUser, updateUser } = useUsers();
+  const { courses } = useCourses();
+  const publishedCourses = courses.filter(c => c.published);
+
   const [form, setForm] = useState<FormData>(EMPTY_FORM);
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
   const [showPass, setShowPass] = useState(false);
@@ -203,6 +209,7 @@ function UserFormModal({ open, onClose, editUser, organizations }: {
           position: editUser.position ?? '',
           phone: editUser.phone ?? '',
           status: editUser.status,
+          assignedCourses: editUser.enrolledCourses ?? [],
         });
         setCustomOrg(!organizations.includes(editUser.organization));
       } else {
@@ -231,6 +238,15 @@ function UserFormModal({ open, onClose, editUser, organizations }: {
     return Object.keys(e).length === 0;
   };
 
+  const toggleCourse = (courseId: string) => {
+    setForm(prev => ({
+      ...prev,
+      assignedCourses: prev.assignedCourses.includes(courseId)
+        ? prev.assignedCourses.filter(id => id !== courseId)
+        : [...prev.assignedCourses, courseId],
+    }));
+  };
+
   const handleSubmit = () => {
     if (!validate()) return;
     if (editUser) {
@@ -239,6 +255,7 @@ function UserFormModal({ open, onClose, editUser, organizations }: {
         role: form.role, organization: form.organization,
         department: form.department, position: form.position,
         phone: form.phone, status: form.status,
+        enrolledCourses: form.assignedCourses,
       });
     } else {
       addUser({
@@ -246,6 +263,7 @@ function UserFormModal({ open, onClose, editUser, organizations }: {
         role: form.role, organization: form.organization,
         department: form.department, position: form.position,
         phone: form.phone, status: form.status,
+        enrolledCourses: form.assignedCourses,
       });
     }
     setSuccess(true);
@@ -465,6 +483,55 @@ function UserFormModal({ open, onClose, editUser, organizations }: {
                   />
                 </Field>
               </div>
+
+              {/* Section: Назначить курсы */}
+              {publishedCourses.length > 0 && (
+                <>
+                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.07em', marginTop: '4px', marginBottom: '2px' }}>
+                    Назначить курсы
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                    {publishedCourses.map(course => {
+                      const checked = form.assignedCourses.includes(course.id);
+                      return (
+                        <button
+                          key={course.id}
+                          type="button"
+                          onClick={() => toggleCourse(course.id)}
+                          style={{
+                            display: 'flex', alignItems: 'center', gap: 10,
+                            padding: '9px 12px', borderRadius: 8,
+                            border: `1.5px solid ${checked ? '#2B5CE6' : '#E3E7F0'}`,
+                            background: checked ? '#EBF1FE' : '#fff',
+                            cursor: 'pointer', textAlign: 'left', transition: 'all 0.12s',
+                          }}
+                        >
+                          <div style={{
+                            width: 18, height: 18, borderRadius: 5, flexShrink: 0,
+                            border: `2px solid ${checked ? '#2B5CE6' : '#D1D5DB'}`,
+                            background: checked ? '#2B5CE6' : '#fff',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            transition: 'all 0.12s',
+                          }}>
+                            {checked && <IcCheck size={11} color="#fff" />}
+                          </div>
+                          <span style={{ fontSize: 13, color: checked ? '#1B3D84' : '#374151', fontWeight: checked ? 500 : 400, flex: 1 }}>
+                            {course.title}
+                          </span>
+                          <span style={{ fontSize: 11, color: '#9CA3AF' }}>
+                            {course.lessons.length} мат.
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {form.assignedCourses.length > 0 && (
+                    <div style={{ fontSize: 12, color: '#2B5CE6', marginTop: 2 }}>
+                      Назначено курсов: {form.assignedCourses.length}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           )}
         </div>

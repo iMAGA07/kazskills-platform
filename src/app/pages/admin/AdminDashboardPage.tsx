@@ -1,251 +1,600 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
-import { useLanguage } from '../../context/LanguageContext';
-import { useCourses } from '../../context/CoursesContext';
 import { useUsers } from '../../context/UsersContext';
-import { SparkLineChart } from '../../components/shared/SparkLineChart';
+import { useCourses, UserProgress } from '../../context/CoursesContext';
 import {
-  IcTeam, IcBook, IcMedal, IcPlus, IcArrowRight,
-  IcEye, IcGraph, IcChevronRight,
+  IcUserPlus, IcPlus, IcClose, IcChevronDown, IcTeam,
+  IcBook, IcDocument, IcCheck, IcDownload,
 } from '../../components/Icons';
+import {
+  Document, Packer, Paragraph, Table, TableRow, TableCell,
+  TextRun, HeadingLevel, AlignmentType, WidthType, BorderStyle,
+} from 'docx';
 
-const NAVY   = '#1B3D84';
-const BLUE   = '#2B5CE6';
-const CARD   = '#fff';
+const NAVY  = '#1B3D84';
+const BLUE  = '#2B5CE6';
 const BORDER = '#E8ECF6';
 const MUTED  = '#6B7280';
-const FAINT  = '#F4F6FB';
 
-function KpiCard({ label, value, sub, icon: Icon, trend }: {
-  label: string; value: string | number; sub?: string;
-  icon: React.ElementType; trend?: string;
-}) {
+// ─── Download helper ──────────────────────────────────────────────────────────
+function downloadBlob(blob: Blob, filename: string) {
+  const url = URL.createObjectURL(blob);
+  const a   = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ─── Cell builder helpers ─────────────────────────────────────────────────────
+function hdrCell(text: string, widthPct: number) {
+  return new TableCell({
+    width: { size: widthPct * 100, type: WidthType.DXA },
+    shading: { fill: '1B3D84' },
+    children: [new Paragraph({
+      alignment: AlignmentType.CENTER,
+      children: [new TextRun({ text, bold: true, color: 'FFFFFF', size: 20 })],
+    })],
+  });
+}
+function dataCell(text: string, center = false) {
+  return new TableCell({
+    children: [new Paragraph({
+      alignment: center ? AlignmentType.CENTER : AlignmentType.LEFT,
+      children: [new TextRun({ text, size: 20 })],
+    })],
+  });
+}
+function makeTable(header: TableRow, rows: TableRow[]) {
+  return new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: [header, ...rows],
+    borders: {
+      top:    { style: BorderStyle.SINGLE, size: 4, color: '1B3D84' },
+      bottom: { style: BorderStyle.SINGLE, size: 4, color: '1B3D84' },
+      left:   { style: BorderStyle.SINGLE, size: 4, color: '1B3D84' },
+      right:  { style: BorderStyle.SINGLE, size: 4, color: '1B3D84' },
+      insideH:{ style: BorderStyle.SINGLE, size: 2, color: 'CCCCCC' },
+      insideV:{ style: BorderStyle.SINGLE, size: 2, color: 'CCCCCC' },
+    },
+  });
+}
+
+// ─── Report generators ────────────────────────────────────────────────────────
+async function generateZayavka(
+  org: string,
+  users: ReturnType<typeof useUsers>['users'],
+  courses: ReturnType<typeof useCourses>['courses'],
+  progressMap: Record<string, UserProgress | null>,
+) {
+  const students = users.filter(u => u.role === 'student' && u.organization === org);
+  const children: (Paragraph | Table)[] = [
+    new Paragraph({
+      text: `Заявка · ${org}`,
+      heading: HeadingLevel.HEADING_1,
+      spacing: { after: 200 },
+    }),
+    new Paragraph({
+      text: `Дата формирования: ${new Date().toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })}`,
+      spacing: { after: 400 },
+      children: [new TextRun({ text: `Дата формирования: ${new Date().toLocaleDateString('ru-RU')}`, size: 20, color: '555555' })],
+    }),
+  ];
+
+  const published = courses.filter(c => c.published);
+
+  for (const course of published) {
+    const enrolled = students.filter(u => u.enrolledCourses.includes(course.id));
+    if (enrolled.length === 0) continue;
+
+    children.push(new Paragraph({
+      spacing: { before: 400, after: 160 },
+      children: [new TextRun({ text: `«${course.title}»`, bold: true, size: 24 })],
+    }));
+
+    const hdr = new TableRow({
+      tableHeader: true,
+      children: [
+        hdrCell('№', 600),
+        hdrCell('Ф. И. О', 3000),
+        hdrCell('Должность', 2400),
+        hdrCell('Дата прохождения курса', 2400),
+      ],
+    });
+
+    const rows = enrolled.map((u, i) => {
+      const prog = progressMap[`${u.id}:${course.id}`];
+      const passing = prog?.attempts?.filter(a => a.passed).sort((a, b) => b.completedAt.localeCompare(a.completedAt))[0];
+      const date = passing
+        ? new Date(passing.completedAt).toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric' })
+        : '—';
+      return new TableRow({ children: [
+        dataCell(String(i + 1), true),
+        dataCell(u.name),
+        dataCell(u.position || '—'),
+        dataCell(date, true),
+      ]});
+    });
+
+    children.push(makeTable(hdr, rows));
+  }
+
+  const doc = new Document({ sections: [{ children }] });
+  const blob = await Packer.toBlob(doc);
+  downloadBlob(blob, `Заявка_${org}_${new Date().toLocaleDateString('ru-RU').replace(/\./g, '-')}.docx`);
+}
+
+async function generateLoginsPasswords(
+  org: string,
+  users: ReturnType<typeof useUsers>['users'],
+  courses: ReturnType<typeof useCourses>['courses'],
+) {
+  const students = users.filter(u => u.role === 'student' && u.organization === org);
+  const children: (Paragraph | Table)[] = [
+    new Paragraph({
+      text: `Логины и пароли · ${org}`,
+      heading: HeadingLevel.HEADING_1,
+      spacing: { after: 200 },
+    }),
+    new Paragraph({
+      spacing: { after: 400 },
+      children: [new TextRun({ text: `Дата формирования: ${new Date().toLocaleDateString('ru-RU')}`, size: 20, color: '555555' })],
+    }),
+  ];
+
+  const published = courses.filter(c => c.published);
+
+  for (const course of published) {
+    const enrolled = students.filter(u => u.enrolledCourses.includes(course.id));
+    if (enrolled.length === 0) continue;
+
+    children.push(new Paragraph({
+      spacing: { before: 400, after: 160 },
+      children: [new TextRun({ text: `«${course.title}»`, bold: true, size: 24 })],
+    }));
+
+    const hdr = new TableRow({
+      tableHeader: true,
+      children: [
+        hdrCell('№', 600),
+        hdrCell('Ф. И. О', 2600),
+        hdrCell('Должность', 2200),
+        hdrCell('Логин', 1600),
+        hdrCell('Пароль', 1400),
+      ],
+    });
+
+    const rows = enrolled.map((u, i) => new TableRow({ children: [
+      dataCell(String(i + 1), true),
+      dataCell(u.name),
+      dataCell(u.position || '—'),
+      dataCell(u.email),
+      dataCell(u.password || '—'),
+    ]}));
+
+    children.push(makeTable(hdr, rows));
+  }
+
+  const doc = new Document({ sections: [{ children }] });
+  const blob = await Packer.toBlob(doc);
+  downloadBlob(blob, `Логины_пароли_${org}_${new Date().toLocaleDateString('ru-RU').replace(/\./g, '-')}.docx`);
+}
+
+async function generateStatistika(
+  org: string,
+  users: ReturnType<typeof useUsers>['users'],
+  courses: ReturnType<typeof useCourses>['courses'],
+  progressMap: Record<string, UserProgress | null>,
+) {
+  const students = users.filter(u => u.role === 'student' && u.organization === org);
+  const published = courses.filter(c => c.published);
+
+  const children: (Paragraph | Table)[] = [
+    new Paragraph({
+      text: `Статистика · ${org}`,
+      heading: HeadingLevel.HEADING_1,
+      spacing: { after: 200 },
+    }),
+    new Paragraph({
+      spacing: { after: 400 },
+      children: [new TextRun({ text: `Дата формирования: ${new Date().toLocaleDateString('ru-RU')}`, size: 20, color: '555555' })],
+    }),
+  ];
+
+  // Header row: №, ФИО, course1, course2, ...
+  const colW = Math.floor(5000 / Math.max(published.length, 1));
+  const hdrCells = [
+    hdrCell('№', 600),
+    hdrCell('Ф. И. О', 2400),
+    ...published.map(c => hdrCell(c.title.length > 20 ? c.title.slice(0, 18) + '…' : c.title, colW)),
+  ];
+  const hdr = new TableRow({ tableHeader: true, children: hdrCells });
+
+  const rows = students.map((u, i) => {
+    const cells = [
+      dataCell(String(i + 1), true),
+      dataCell(u.name),
+      ...published.map(c => {
+        const prog = progressMap[`${u.id}:${c.id}`];
+        if (!prog || prog.attempts.length === 0) return dataCell('—', true);
+        const best = prog.attempts
+          .filter(a => a.passed)
+          .sort((a, b) => b.score - a.score)[0]
+          ?? prog.attempts.sort((a, b) => b.completedAt.localeCompare(a.completedAt))[0];
+        return dataCell(best ? `${Math.round(best.score)}%` : '—', true);
+      }),
+    ];
+    return new TableRow({ children: cells });
+  });
+
+  children.push(makeTable(hdr, rows));
+
+  const doc = new Document({ sections: [{ children }] });
+  const blob = await Packer.toBlob(doc);
+  downloadBlob(blob, `Статистика_${org}_${new Date().toLocaleDateString('ru-RU').replace(/\./g, '-')}.docx`);
+}
+
+// ─── Report Modal ─────────────────────────────────────────────────────────────
+type ReportType = 'zayavka' | 'logins' | 'statistika';
+
+const REPORT_TYPES: { value: ReportType; label: string; desc: string; icon: React.ElementType }[] = [
+  { value: 'zayavka',    label: 'Заявка',           desc: 'ФИО · Должность · Дата прохождения курса', icon: IcDocument },
+  { value: 'logins',     label: 'Логины и пароли',  desc: 'ФИО · Должность · Логин · Пароль',         icon: IcBook },
+  { value: 'statistika', label: 'Статистика',        desc: 'ФИО · Баллы по каждому курсу (%)',          icon: IcTeam },
+];
+
+function ReportModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { users } = useUsers();
+  const { courses, getProgress } = useCourses();
+
+  const [step,       setStep]       = useState<1 | 2>(1);
+  const [type,       setType]       = useState<ReportType | null>(null);
+  const [org,        setOrg]        = useState('');
+  const [generating, setGenerating] = useState(false);
+  const [done,       setDone]       = useState(false);
+
+  const organizations = [...new Set(
+    users.filter(u => u.role === 'student').map(u => u.organization)
+  )].sort();
+
+  useEffect(() => {
+    if (open) { setStep(1); setType(null); setOrg(''); setDone(false); }
+  }, [open]);
+
+  if (!open) return null;
+
+  const needsProgress = type === 'zayavka' || type === 'statistika';
+
+  const handleGenerate = async () => {
+    if (!type || !org) return;
+    setGenerating(true);
+    try {
+      let progressMap: Record<string, UserProgress | null> = {};
+
+      if (needsProgress) {
+        const students = users.filter(u => u.role === 'student' && u.organization === org);
+        const published = courses.filter(c => c.published);
+        const pairs = students.flatMap(u => published.map(c => ({ uid: u.id, cid: c.id })));
+        const results = await Promise.all(
+          pairs.map(({ uid, cid }) => getProgress(uid, cid).catch(() => null))
+        );
+        pairs.forEach(({ uid, cid }, i) => { progressMap[`${uid}:${cid}`] = results[i]; });
+      }
+
+      if (type === 'zayavka')    await generateZayavka(org, users, courses, progressMap);
+      if (type === 'logins')     await generateLoginsPasswords(org, users, courses);
+      if (type === 'statistika') await generateStatistika(org, users, courses, progressMap);
+
+      setDone(true);
+      setTimeout(() => onClose(), 1800);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   return (
-    <div style={{
-      background: CARD, borderRadius: '12px', padding: '20px 22px',
-      boxShadow: '0 1px 4px rgba(0,0,0,0.06)', flex: 1, minWidth: '150px',
-      border: `1px solid ${BORDER}`,
-      display: 'flex', gap: '14px', alignItems: 'flex-start',
-    }}>
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 1000,
+        background: 'rgba(15,22,41,0.45)', backdropFilter: 'blur(3px)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+      }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}
+    >
       <div style={{
-        width: 44, height: 44, borderRadius: '10px',
-        background: NAVY, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+        background: '#fff', borderRadius: 18, width: '100%', maxWidth: 520,
+        boxShadow: '0 24px 72px rgba(0,0,0,0.14)', overflow: 'hidden',
+        maxHeight: '90vh', display: 'flex', flexDirection: 'column',
       }}>
-        <Icon size={20} color="#fff" />
-      </div>
-      <div>
-        <div style={{ fontSize: '27px', fontWeight: 700, color: '#0F1629', lineHeight: 1 }}>{value}</div>
-        <div style={{ fontSize: '12px', color: MUTED, marginTop: '4px' }}>{label}</div>
-        {trend && <div style={{ fontSize: '11px', color: BLUE, marginTop: '3px', fontWeight: 500 }}>↑ {trend}</div>}
-        {sub   && <div style={{ fontSize: '11px', color: '#9CA3AF', marginTop: '2px' }}>{sub}</div>}
+        {/* Header */}
+        <div style={{
+          padding: '22px 24px 18px', borderBottom: '1px solid #F3F4F6',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0,
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 10, background: '#EBF1FE', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <IcDocument size={20} color={BLUE} />
+            </div>
+            <div>
+              <h2 style={{ margin: 0, fontSize: 16, color: '#0F1629' }}>Сформировать отчёт</h2>
+              <p style={{ margin: '2px 0 0', fontSize: 12, color: '#9CA3AF' }}>
+                {step === 1 ? 'Шаг 1 из 2 · Выберите тип отчёта' : 'Шаг 2 из 2 · Выберите организацию'}
+              </p>
+            </div>
+          </div>
+          <button onClick={onClose}
+            style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #E3E7F0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <IcClose size={15} color="#6B7280" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
+          {done ? (
+            <div style={{ textAlign: 'center', padding: '32px 0' }}>
+              <div style={{ width: 56, height: 56, borderRadius: '50%', background: '#ECFDF5', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+                <IcCheck size={28} color="#059669" />
+              </div>
+              <p style={{ fontSize: 15, fontWeight: 600, color: '#059669', margin: '0 0 6px' }}>Отчёт сформирован!</p>
+              <p style={{ fontSize: 13, color: '#6B7280', margin: 0 }}>Файл загружен на ваше устройство.</p>
+            </div>
+          ) : step === 1 ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <p style={{ margin: '0 0 8px', fontSize: 13, color: MUTED }}>Выберите вид отчёта, который нужно сформировать:</p>
+              {REPORT_TYPES.map(rt => {
+                const Icon = rt.icon;
+                const selected = type === rt.value;
+                return (
+                  <button
+                    key={rt.value}
+                    onClick={() => setType(rt.value)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 14,
+                      padding: '14px 16px', borderRadius: 12,
+                      border: `2px solid ${selected ? BLUE : '#E3E7F0'}`,
+                      background: selected ? '#EBF1FE' : '#FAFBFF',
+                      cursor: 'pointer', textAlign: 'left', transition: 'all 0.14s',
+                    }}
+                  >
+                    <div style={{ width: 40, height: 40, borderRadius: 10, background: selected ? BLUE : '#F3F4F6', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <Icon size={20} color={selected ? '#fff' : '#6B7280'} />
+                    </div>
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: selected ? BLUE : '#0F1629' }}>{rt.label}</div>
+                      <div style={{ fontSize: 12, color: MUTED, marginTop: 2 }}>{rt.desc}</div>
+                    </div>
+                    {selected && <IcCheck size={18} color={BLUE} style={{ marginLeft: 'auto' }} />}
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div>
+              <p style={{ margin: '0 0 14px', fontSize: 13, color: MUTED }}>
+                Выберите организацию, по которой нужно сформировать отчёт:
+              </p>
+              <div style={{ position: 'relative' }}>
+                <select
+                  value={org}
+                  onChange={e => setOrg(e.target.value)}
+                  style={{
+                    width: '100%', padding: '10px 36px 10px 14px', borderRadius: 9,
+                    border: `1.5px solid ${org ? BLUE : '#E3E7F0'}`, background: '#fff',
+                    fontSize: 13.5, color: org ? '#0F1629' : '#9CA3AF',
+                    appearance: 'none', outline: 'none', cursor: 'pointer',
+                    boxSizing: 'border-box',
+                  }}
+                >
+                  <option value="">— Выберите организацию —</option>
+                  {organizations.map(o => <option key={o} value={o}>{o}</option>)}
+                </select>
+                <IcChevronDown size={14} color="#9CA3AF" style={{ position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none' }} />
+              </div>
+
+              {org && (
+                <div style={{ marginTop: 16, padding: '12px 14px', borderRadius: 9, background: '#F8FAFD', border: '1px solid #E3E7F0' }}>
+                  <div style={{ fontSize: 12, color: MUTED, marginBottom: 6, fontWeight: 600 }}>Будет включено в отчёт:</div>
+                  {(() => {
+                    const count = users.filter(u => u.role === 'student' && u.organization === org).length;
+                    const selected = REPORT_TYPES.find(r => r.value === type);
+                    return (
+                      <div style={{ fontSize: 13, color: '#374151' }}>
+                        <strong style={{ color: NAVY }}>{count}</strong> слушателей · Тип: <strong style={{ color: NAVY }}>{selected?.label}</strong>
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        {!done && (
+          <div style={{ padding: '16px 24px', borderTop: '1px solid #F3F4F6', display: 'flex', gap: 10, justifyContent: 'flex-end', flexShrink: 0 }}>
+            {step === 2 && (
+              <button onClick={() => setStep(1)}
+                style={{ padding: '9px 20px', borderRadius: 9, border: '1.5px solid #E3E7F0', background: '#fff', color: '#374151', fontSize: 13.5, fontWeight: 500, cursor: 'pointer' }}>
+                ← Назад
+              </button>
+            )}
+            <button onClick={onClose}
+              style={{ padding: '9px 20px', borderRadius: 9, border: '1.5px solid #E3E7F0', background: '#fff', color: '#374151', fontSize: 13.5, fontWeight: 500, cursor: 'pointer' }}>
+              Отмена
+            </button>
+            {step === 1 ? (
+              <button
+                onClick={() => type && setStep(2)}
+                disabled={!type}
+                style={{
+                  padding: '9px 24px', borderRadius: 9, border: 'none',
+                  background: type ? BLUE : '#E5E7EB', color: type ? '#fff' : '#9CA3AF',
+                  fontSize: 13.5, fontWeight: 600, cursor: type ? 'pointer' : 'not-allowed',
+                }}>
+                Далее →
+              </button>
+            ) : (
+              <button
+                onClick={handleGenerate}
+                disabled={!org || generating}
+                style={{
+                  padding: '9px 24px', borderRadius: 9, border: 'none', display: 'flex', alignItems: 'center', gap: 7,
+                  background: org && !generating ? NAVY : '#E5E7EB',
+                  color: org && !generating ? '#fff' : '#9CA3AF',
+                  fontSize: 13.5, fontWeight: 600, cursor: org && !generating ? 'pointer' : 'not-allowed',
+                }}>
+                {generating ? (
+                  <>
+                    <div style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                    Формирование…
+                  </>
+                ) : (
+                  <><IcDownload size={15} color="#fff" /> Скачать .docx</>
+                )}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
+// ─── Main Page ────────────────────────────────────────────────────────────────
 export default function AdminDashboardPage() {
-  const { t } = useLanguage();
   const navigate = useNavigate();
   const { users } = useUsers();
-  const { courses, loading } = useCourses();
+  const { courses } = useCourses();
 
-  const totalStudents  = users.filter(u => u.role === 'student').length;
-  const publishedCourses = courses.filter(c => c.published);
-  const totalCourses   = publishedCourses.length;
-  const totalQuestions = courses.reduce((s, c) => s + c.test.questions.length, 0);
-  const totalMaterials = courses.reduce((s, c) => s + c.lessons.length, 0);
-  const recentCourses  = courses.slice(0, 5);
+  const [reportOpen, setReportOpen] = useState(false);
 
-  // Chart data – enrolledCount per course
-  const chartData = courses.slice(0, 8).map(c => ({
-    label: c.title.slice(0, 10) + (c.title.length > 10 ? '…' : ''),
-    value: c.enrolledCount || 0,
-  }));
-
-  // Pass-rate bars from courses
-  const passRateBars = publishedCourses.slice(0, 5).map(c => ({
-    name: c.title,
-    rate: c.test.passingScore,
-  }));
+  const totalStudents = users.filter(u => u.role === 'student').length;
+  const totalCourses  = courses.filter(c => c.published).length;
+  const orgs          = new Set(users.map(u => u.organization)).size;
 
   return (
-    <div style={{ maxWidth: 1080, margin: '0 auto' }}>
+    <div style={{ maxWidth: 900, margin: '0 auto' }}>
       {/* Header */}
-      <div style={{ marginBottom: '28px', display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
-        <div>
-          <h1 style={{ margin: '0 0 4px', color: '#0F1629' }}>Панель администратора</h1>
-          <p style={{ color: MUTED, margin: 0, fontSize: '13.5px' }}>
-            Обзор платформы · {new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
-          </p>
-        </div>
-        <button
-          onClick={() => navigate('/admin/courses/new')}
-          style={{
-            display: 'flex', alignItems: 'center', gap: '7px',
-            padding: '10px 18px', borderRadius: '9px',
-            background: BLUE, border: 'none', color: '#fff',
-            fontSize: '13.5px', fontWeight: 600, cursor: 'pointer',
-            boxShadow: '0 2px 12px rgba(43,92,230,0.3)',
-          }}
-        >
-          <IcPlus size={15} color="#fff" />
-          {t('admin.create_course')}
-        </button>
+      <div style={{ marginBottom: 32 }}>
+        <h1 style={{ margin: '0 0 4px', color: '#0F1629', fontSize: 26 }}>Панель администратора</h1>
+        <p style={{ color: MUTED, margin: 0, fontSize: 13.5 }}>
+          {new Date().toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' })}
+        </p>
       </div>
 
-      {/* KPI cards */}
-      <div style={{ display: 'flex', gap: '14px', marginBottom: '28px', flexWrap: 'wrap' }}>
-        <KpiCard label="Слушателей"     value={totalStudents}  icon={IcTeam}  trend="+2 за месяц" />
-        <KpiCard label="Курсов"         value={totalCourses}   icon={IcBook}  sub="Опубликовано" />
-        <KpiCard label="Материалов"     value={totalMaterials} icon={IcMedal} />
-        <KpiCard label="Вопросов в тестах" value={totalQuestions} icon={IcGraph} />
-      </div>
-
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: '20px', alignItems: 'start' }}>
-        {/* Chart */}
-        <div style={{ background: CARD, borderRadius: '14px', padding: '24px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: `1px solid ${BORDER}` }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+      {/* Quick stats */}
+      <div style={{ display: 'flex', gap: 14, marginBottom: 32, flexWrap: 'wrap' }}>
+        {[
+          { label: 'Слушателей', value: totalStudents, icon: IcTeam },
+          { label: 'Курсов',     value: totalCourses,  icon: IcBook },
+          { label: 'Организаций',value: orgs,           icon: IcDocument },
+        ].map(({ label, value, icon: Icon }) => (
+          <div key={label} style={{
+            flex: '1 1 160px', background: '#fff', borderRadius: 12, padding: '18px 20px',
+            boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: `1px solid ${BORDER}`,
+            display: 'flex', alignItems: 'center', gap: 14,
+          }}>
+            <div style={{ width: 42, height: 42, borderRadius: 10, background: NAVY, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Icon size={20} color="#fff" />
+            </div>
             <div>
-              <h3 style={{ margin: '0 0 2px', color: '#0F1629' }}>Прохождения по курсам</h3>
-              <p style={{ color: MUTED, margin: 0, fontSize: '12.5px' }}>Количество прохождений теста</p>
+              <div style={{ fontSize: 28, fontWeight: 700, color: '#0F1629', lineHeight: 1 }}>{value}</div>
+              <div style={{ fontSize: 12, color: MUTED, marginTop: 3 }}>{label}</div>
             </div>
-            <div style={{
-              padding: '5px 12px', borderRadius: '6px',
-              background: FAINT, border: `1px solid ${BORDER}`,
-              fontSize: '12px', fontWeight: 600, color: BLUE,
-            }}>Актуально</div>
           </div>
-          {chartData.length > 0 ? (
-            <SparkLineChart data={chartData} color={BLUE} height={200} tooltipLabel="прохождений" />
-          ) : (
-            <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9CA3AF', fontSize: '13px' }}>
-              {loading ? 'Загрузка...' : 'Данных пока нет. Создайте первый курс.'}
-            </div>
-          )}
-        </div>
-
-        {/* Right panel */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-          {/* Pass rates */}
-          <div style={{ background: CARD, borderRadius: '14px', padding: '20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: `1px solid ${BORDER}` }}>
-            <h4 style={{ margin: '0 0 16px', color: '#0F1629', fontSize: '14px' }}>Проходной балл по курсам</h4>
-            {passRateBars.length === 0 ? (
-              <p style={{ margin: 0, fontSize: '13px', color: '#9CA3AF' }}>Нет опубликованных курсов</p>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {passRateBars.map(({ name, rate }) => (
-                  <div key={name}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                      <span style={{ fontSize: '12px', color: '#374151', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '70%' }}>{name}</span>
-                      <span style={{ fontSize: '12px', fontWeight: 600, color: '#0F1629' }}>{rate}%</span>
-                    </div>
-                    <div style={{ height: '5px', background: FAINT, borderRadius: '3px', overflow: 'hidden' }}>
-                      <div style={{ height: '100%', width: `${rate}%`, background: BLUE, borderRadius: '3px' }} />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Quick actions */}
-          <div style={{ background: CARD, borderRadius: '14px', padding: '18px 20px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: `1px solid ${BORDER}` }}>
-            <h4 style={{ margin: '0 0 14px', color: '#0F1629', fontSize: '14px' }}>Быстрые действия</h4>
-            {[
-              { label: 'Создать курс',              path: '/admin/courses/new', icon: IcPlus  },
-              { label: 'Управление пользователями', path: '/admin/users',       icon: IcTeam  },
-              { label: 'Аналитика',                 path: '/admin/analytics',   icon: IcGraph },
-            ].map(({ label, path, icon: Icon }) => (
-              <button
-                key={label}
-                onClick={() => navigate(path)}
-                style={{
-                  width: '100%', display: 'flex', alignItems: 'center', gap: '10px',
-                  padding: '10px 0', background: 'none', border: 'none',
-                  borderBottom: `1px solid ${FAINT}`, cursor: 'pointer',
-                  transition: 'all 0.15s', textAlign: 'left',
-                }}
-                onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.paddingLeft = '6px'}
-                onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.paddingLeft = '0'}
-              >
-                <div style={{ width: 30, height: 30, borderRadius: '7px', background: NAVY, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <Icon size={14} color="#fff" />
-                </div>
-                <span style={{ flex: 1, fontSize: '13px', color: '#374151', fontWeight: 500 }}>{label}</span>
-                <IcChevronRight size={14} color="#D1D5DB" />
-              </button>
-            ))}
-          </div>
-        </div>
+        ))}
       </div>
 
-      {/* Recent courses table */}
-      <div style={{ background: CARD, borderRadius: '14px', padding: '24px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', marginTop: '20px', border: `1px solid ${BORDER}` }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '18px' }}>
-          <h3 style={{ margin: 0, color: '#0F1629' }}>Все курсы</h3>
+      {/* Main action cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
+        {/* Add user */}
+        <div style={{
+          background: '#fff', borderRadius: 16, padding: '32px 28px',
+          boxShadow: '0 2px 12px rgba(43,92,230,0.08)', border: `1.5px solid ${BORDER}`,
+          display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 12,
+        }}>
+          <div style={{ width: 52, height: 52, borderRadius: 14, background: '#EBF1FE', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <IcUserPlus size={26} color={BLUE} />
+          </div>
+          <div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: '#0F1629', marginBottom: 6 }}>Добавить пользователя</div>
+            <div style={{ fontSize: 13, color: MUTED, lineHeight: 1.5 }}>
+              ФИО, место работы, должность, логин и пароль. Назначьте курсы непосредственно при создании.
+            </div>
+          </div>
           <button
-            onClick={() => navigate('/admin/courses')}
-            style={{ display: 'flex', alignItems: 'center', gap: '4px', background: 'none', border: 'none', color: BLUE, cursor: 'pointer', fontSize: '13px', fontWeight: 500 }}
+            onClick={() => navigate('/admin/users')}
+            style={{
+              marginTop: 4, padding: '10px 22px', borderRadius: 9, border: 'none',
+              background: BLUE, color: '#fff', fontSize: 13.5, fontWeight: 600, cursor: 'pointer',
+              boxShadow: '0 2px 10px rgba(43,92,230,0.3)',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.background = '#2450CC')}
+            onMouseLeave={e => (e.currentTarget.style.background = BLUE)}
           >
-            Управление <IcArrowRight size={14} color={BLUE} />
+            <IcUserPlus size={14} color="#fff" style={{ marginRight: 6, verticalAlign: 'middle' }} />
+            Добавить пользователя
           </button>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          {loading && <p style={{ color: '#9CA3AF', textAlign: 'center', padding: '20px 0' }}>Загрузка...</p>}
-          {!loading && recentCourses.length === 0 && (
-            <div style={{ textAlign: 'center', padding: '30px 0', color: '#9CA3AF' }}>
-              <IcBook size={36} color="#D1D5DB" style={{ marginBottom: 10 }} />
-              <p style={{ margin: '0 0 12px' }}>Курсов пока нет</p>
-              <button
-                onClick={() => navigate('/admin/courses/new')}
-                style={{ padding: '8px 18px', borderRadius: 8, background: BLUE, border: 'none', color: '#fff', fontSize: '13px', fontWeight: 600, cursor: 'pointer' }}
-              >
-                Создать первый курс
-              </button>
+
+        {/* Report */}
+        <div style={{
+          background: '#fff', borderRadius: 16, padding: '32px 28px',
+          boxShadow: '0 2px 12px rgba(27,61,132,0.08)', border: `1.5px solid ${BORDER}`,
+          display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 12,
+        }}>
+          <div style={{ width: 52, height: 52, borderRadius: 14, background: '#F0F4FF', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <IcDocument size={26} color={NAVY} />
+          </div>
+          <div>
+            <div style={{ fontSize: 17, fontWeight: 700, color: '#0F1629', marginBottom: 6 }}>Сформировать отчёт</div>
+            <div style={{ fontSize: 13, color: MUTED, lineHeight: 1.5 }}>
+              Три вида отчётов в формате Word: заявка, логины и пароли, статистика по курсам.
             </div>
-          )}
-          {!loading && recentCourses.map((c, i) => (
-            <div key={c.id} style={{
-              display: 'flex', alignItems: 'center', gap: '14px',
-              padding: '14px 0',
-              borderBottom: i < recentCourses.length - 1 ? `1px solid ${FAINT}` : 'none',
-            }}>
-              <div style={{ width: 40, height: 40, borderRadius: '9px', background: NAVY, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <IcBook size={18} color="#fff" />
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: '13.5px', fontWeight: 500, color: '#0F1629', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.title}</div>
-                <div style={{ fontSize: '11.5px', color: MUTED, marginTop: '2px' }}>
-                  {c.lessons.length} материалов · {c.test.questions.length} вопросов
-                </div>
-              </div>
-              <div style={{ textAlign: 'right', flexShrink: 0 }}>
-                <span style={{
-                  fontSize: '11.5px', fontWeight: 600,
-                  color: c.published ? '#059669' : '#9CA3AF',
-                  background: c.published ? '#D1FAE5' : FAINT,
-                  padding: '3px 8px', borderRadius: '5px',
-                }}>
-                  {c.published ? 'Опубликован' : 'Черновик'}
-                </span>
-              </div>
-              <button
-                onClick={() => navigate(`/admin/courses/${c.id}/edit`)}
-                style={{
-                  width: 32, height: 32, borderRadius: '7px',
-                  background: FAINT, border: `1px solid ${BORDER}`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  cursor: 'pointer', flexShrink: 0, transition: 'all 0.15s',
-                }}
-                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = NAVY; (e.currentTarget as HTMLButtonElement).style.borderColor = NAVY; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = FAINT; (e.currentTarget as HTMLButtonElement).style.borderColor = BORDER; }}
-              >
-                <IcEye size={14} color="#6B7280" />
-              </button>
-            </div>
-          ))}
+          </div>
+          <button
+            onClick={() => setReportOpen(true)}
+            style={{
+              marginTop: 4, padding: '10px 22px', borderRadius: 9, border: 'none',
+              background: NAVY, color: '#fff', fontSize: 13.5, fontWeight: 600, cursor: 'pointer',
+              boxShadow: '0 2px 10px rgba(27,61,132,0.25)',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.background = '#163272')}
+            onMouseLeave={e => (e.currentTarget.style.background = NAVY)}
+          >
+            <IcDownload size={14} color="#fff" style={{ marginRight: 6, verticalAlign: 'middle' }} />
+            Сформировать отчёт
+          </button>
         </div>
       </div>
+
+      {/* Secondary actions */}
+      <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        {[
+          { label: 'Управление курсами', path: '/admin/courses', icon: IcBook },
+          { label: 'Пользователи',       path: '/admin/users',   icon: IcTeam },
+          { label: 'Создать курс',       path: '/admin/courses/new', icon: IcPlus },
+        ].map(({ label, path, icon: Icon }) => (
+          <button
+            key={label}
+            onClick={() => navigate(path)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              padding: '9px 18px', borderRadius: 9,
+              border: `1.5px solid ${BORDER}`, background: '#fff',
+              color: '#374151', fontSize: 13, fontWeight: 500, cursor: 'pointer',
+              transition: 'all 0.14s',
+            }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = BLUE; (e.currentTarget as HTMLButtonElement).style.color = BLUE; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = BORDER; (e.currentTarget as HTMLButtonElement).style.color = '#374151'; }}
+          >
+            <Icon size={15} color="currentColor" />
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <ReportModal open={reportOpen} onClose={() => setReportOpen(false)} />
     </div>
   );
 }
