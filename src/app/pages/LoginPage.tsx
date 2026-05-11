@@ -5,11 +5,13 @@ import { useLanguage } from '../context/LanguageContext';
 import { LanguageSwitcher } from '../components/shared/LanguageSwitcher';
 import { Logo } from '../components/shared/Logo';
 import { IcEye, IcClose, IcShield, IcWarning, IcLock, IcMail } from '../components/Icons';
+import { getOrganizationName } from '../lib/organization';
 
 const NAVY = '#1B3D84';
 const BLUE = '#2B5CE6';
 
 export default function LoginPage() {
+  const orgName = getOrganizationName();
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
@@ -94,6 +96,22 @@ export default function LoginPage() {
 
         {/* Title */}
         <div style={{ textAlign: 'center', marginBottom: '28px' }}>
+          {orgName && (
+            <div style={{
+              display: 'inline-block',
+              marginBottom: '14px',
+              padding: '6px 14px',
+              borderRadius: '999px',
+              background: NAVY,
+              color: '#fff',
+              fontSize: '12px',
+              fontWeight: 700,
+              letterSpacing: '0.08em',
+              textTransform: 'uppercase',
+            }}>
+              {orgName}
+            </div>
+          )}
           <h2 style={{ margin: '0 0 6px', color: '#0F1629', fontSize: '22px' }}>
             {t('auth.login')}
           </h2>

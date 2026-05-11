@@ -4,6 +4,7 @@ import { LanguageSwitcher } from '../shared/LanguageSwitcher';
 import { useAuth } from '../../context/AuthContext';
 import { IcBook, IcFileText, IcBell, IcCamera, IcLogout } from '../Icons';
 import { useLanguage } from '../../context/LanguageContext';
+import { getOrganizationName } from '../../lib/organization';
 
 // Logo component
 const Logo = () => (
@@ -39,6 +40,7 @@ export function AppLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const orgName = getOrganizationName();
 
   if (!user) return <Navigate to="/login" replace />;
 
@@ -64,7 +66,21 @@ export function AppLayout() {
           {/* Left: Logo + Nav */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '32px' }}>
             <Logo />
-            
+            {orgName && (
+              <div style={{
+                padding: '4px 12px',
+                borderRadius: '999px',
+                background: '#1B3D84',
+                color: '#fff',
+                fontSize: '11px',
+                fontWeight: 700,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+              }}>
+                {orgName}
+              </div>
+            )}
+
             {/* Navigation tabs */}
             {isStudent && (
               <div style={{ display: 'flex', gap: '4px' }}>
