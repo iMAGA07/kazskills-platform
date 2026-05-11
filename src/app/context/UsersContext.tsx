@@ -5,6 +5,7 @@ export interface ManagedUser extends User {
   password: string;
   createdAt: string;
   status: 'active' | 'blocked';
+  requestNumber?: string; // номер заявки, e.g. "001"
 }
 
 const INITIAL_USERS: ManagedUser[] = [
@@ -207,9 +208,18 @@ const INITIAL_USERS: ManagedUser[] = [
 
 type NewUserInput = Omit<ManagedUser, 'id' | 'createdAt' | 'completedCourses'> & { enrolledCourses?: string[] };
 
+export interface BatchUserInput {
+  name: string;
+  position: string;
+  login: string;       // 6-digit generated
+  password: string;    // 4-digit generated
+  enrolledCourses: string[];
+}
+
 interface UsersContextType {
   users: ManagedUser[];
   addUser: (user: NewUserInput) => void;
+  addUsersBatch: (batch: BatchUserInput[], org: string, department: string, requestNumber: string) => ManagedUser[];
   updateUser: (id: string, updates: Partial<ManagedUser>) => void;
   deleteUser: (id: string) => void;
   toggleStatus: (id: string) => void;
@@ -218,6 +228,7 @@ interface UsersContextType {
 const UsersContext = createContext<UsersContextType>({
   users: INITIAL_USERS,
   addUser: () => {},
+  addUsersBatch: () => [],
   updateUser: () => {},
   deleteUser: () => {},
   toggleStatus: () => {},
@@ -253,6 +264,33 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
     persist(users.map(u => u.id === id ? { ...u, ...updates } : u));
   }, [users]);
 
+  const addUsersBatch = useCallback((
+    batch: BatchUserInput[],
+    org: string,
+    department: string,
+    requestNumber: string,
+  ): ManagedUser[] => {
+    const now = new Date().toISOString().slice(0, 10);
+    const newUsers: ManagedUser[] = batch.map((b, i) => ({
+      id: `batch-${Date.now()}-${i}`,
+      email: b.login,
+      password: b.password,
+      name: b.name,
+      role: 'student' as const,
+      organization: org,
+      department,
+      position: b.position,
+      phone: '',
+      enrolledCourses: b.enrolledCourses,
+      completedCourses: [],
+      createdAt: now,
+      status: 'active' as const,
+      requestNumber,
+    }));
+    persist([...users, ...newUsers]);
+    return newUsers;
+  }, [users]);
+
   const deleteUser = useCallback((id: string) => {
     persist(users.filter(u => u.id !== id));
   }, [users]);
@@ -262,7 +300,7 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
   }, [users]);
 
   return (
-    <UsersContext.Provider value={{ users, addUser, updateUser, deleteUser, toggleStatus }}>
+    <UsersContext.Provider value={{ users, addUser, addUsersBatch, updateUser, deleteUser, toggleStatus }}>
       {children}
     </UsersContext.Provider>
   );
