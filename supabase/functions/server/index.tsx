@@ -321,6 +321,117 @@ app.get("/make-server-3ed1835c/attempts/:userId/:courseId", async (c) => {
   }
 });
 
+// ─── USERS ────────────────────────────────────────────────────────────────────
+
+// GET /users — list all users
+app.get("/make-server-3ed1835c/users", async (c) => {
+  try {
+    const idList: string[] = (await kv.get("user_index")) ?? [];
+    if (idList.length === 0) return c.json([]);
+    const userKeys = idList.map((id) => `user:${id}`);
+    const users = await kv.mget(userKeys);
+    return c.json(users.filter(Boolean));
+  } catch (err) {
+    console.log("Error listing users:", err);
+    return c.json({ error: `Failed to list users: ${err}` }, 500);
+  }
+});
+
+// POST /users — create a single user (caller supplies full payload incl. id)
+app.post("/make-server-3ed1835c/users", async (c) => {
+  try {
+    const body = await c.req.json();
+    if (!body.id) return c.json({ error: "id is required" }, 400);
+    await kv.set(`user:${body.id}`, body);
+    const idList: string[] = (await kv.get("user_index")) ?? [];
+    if (!idList.includes(body.id)) {
+      idList.push(body.id);
+      await kv.set("user_index", idList);
+    }
+    return c.json(body, 201);
+  } catch (err) {
+    console.log("Error creating user:", err);
+    return c.json({ error: `Failed to create user: ${err}` }, 500);
+  }
+});
+
+// POST /users/batch — create many users at once
+app.post("/make-server-3ed1835c/users/batch", async (c) => {
+  try {
+    const body = await c.req.json();
+    const users: any[] = Array.isArray(body) ? body : body.users ?? [];
+    if (users.length === 0) return c.json([]);
+
+    const keys = users.map((u) => `user:${u.id}`);
+    await kv.mset(keys, users);
+
+    const idList: string[] = (await kv.get("user_index")) ?? [];
+    for (const u of users) if (!idList.includes(u.id)) idList.push(u.id);
+    await kv.set("user_index", idList);
+
+    return c.json(users, 201);
+  } catch (err) {
+    console.log("Error creating users batch:", err);
+    return c.json({ error: `Failed to create users batch: ${err}` }, 500);
+  }
+});
+
+// PUT /users/:id — update a user
+app.put("/make-server-3ed1835c/users/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    const existing = await kv.get(`user:${id}`);
+    if (!existing) return c.json({ error: "User not found" }, 404);
+    const body = await c.req.json();
+    const updated = { ...existing, ...body, id };
+    await kv.set(`user:${id}`, updated);
+    return c.json(updated);
+  } catch (err) {
+    console.log("Error updating user:", err);
+    return c.json({ error: `Failed to update user: ${err}` }, 500);
+  }
+});
+
+// DELETE /users/:id — delete a user
+app.delete("/make-server-3ed1835c/users/:id", async (c) => {
+  try {
+    const id = c.req.param("id");
+    await kv.del(`user:${id}`);
+    const idList: string[] = (await kv.get("user_index")) ?? [];
+    await kv.set("user_index", idList.filter((u) => u !== id));
+    return c.json({ success: true });
+  } catch (err) {
+    console.log("Error deleting user:", err);
+    return c.json({ error: `Failed to delete user: ${err}` }, 500);
+  }
+});
+
+// POST /users/replace-all — replace entire user set (used for initial seed + sync)
+app.post("/make-server-3ed1835c/users/replace-all", async (c) => {
+  try {
+    const body = await c.req.json();
+    const users: any[] = Array.isArray(body) ? body : body.users ?? [];
+
+    // Remove old users
+    const oldIds: string[] = (await kv.get("user_index")) ?? [];
+    if (oldIds.length > 0) {
+      await kv.mdel(oldIds.map((id) => `user:${id}`));
+    }
+
+    // Write new users
+    if (users.length > 0) {
+      const keys = users.map((u) => `user:${u.id}`);
+      await kv.mset(keys, users);
+    }
+    await kv.set("user_index", users.map((u) => u.id));
+
+    return c.json({ count: users.length });
+  } catch (err) {
+    console.log("Error in replace-all:", err);
+    return c.json({ error: `Failed to replace users: ${err}` }, 500);
+  }
+});
+
 // ─── ANALYTICS ────────────────────────────────────────────────────────────────
 
 // GET /analytics — summary stats

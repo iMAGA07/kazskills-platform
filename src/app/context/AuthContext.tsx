@@ -1,5 +1,9 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import { getOrganizationSlug, slugForLegacyOrgName } from '../lib/organization';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
+
+const USERS_API = `https://${projectId}.supabase.co/functions/v1/make-server-3ed1835c/users`;
+const USERS_HEADERS = { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` };
 
 export type UserRole = 'admin' | 'student';
 
@@ -108,7 +112,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   });
 
   const login = useCallback(async (email: string, password: string): Promise<LoginResult> => {
-    await new Promise(r => setTimeout(r, 800));
     const tenantSlug = getOrganizationSlug();
 
     const acceptIfTenantMatches = (candidate: User): LoginResult => {
@@ -123,19 +126,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return { ok: true };
     };
 
-    // Check dynamically managed users first (from UsersContext storage)
+    const matchInList = (list: any[]) =>
+      list.find(u => u.email === email && u.password === password && u.status !== 'blocked');
+
+    // 1. Server (source of truth)
+    try {
+      const res = await fetch(USERS_API, { headers: USERS_HEADERS });
+      if (res.ok) {
+        const remote = await res.json();
+        const found = matchInList(Array.isArray(remote) ? remote : []);
+        if (found) {
+          const { password: _, status: __, createdAt: ___, ...userWithoutPass } = found;
+          return acceptIfTenantMatches(userWithoutPass);
+        }
+      }
+    } catch (e) {
+      console.warn('Server login lookup failed, falling back to cache:', e);
+    }
+
+    // 2. localStorage cache (offline / pre-sync fallback)
     try {
       const stored = localStorage.getItem('kazskills_managed_users');
       if (stored) {
-        const managedUsers = JSON.parse(stored);
-        const found = managedUsers.find((u: any) => u.email === email && u.password === password && u.status !== 'blocked');
+        const found = matchInList(JSON.parse(stored));
         if (found) {
           const { password: _, status: __, createdAt: ___, ...userWithoutPass } = found;
           return acceptIfTenantMatches(userWithoutPass);
         }
       }
     } catch {}
-    // Fall back to hardcoded users
+
+    // 3. Hardcoded MOCK_USERS (initial bootstrap)
     const found = MOCK_USERS.find(u => u.email === email && u.password === password);
     if (found) {
       const { password: _, ...userWithoutPass } = found;

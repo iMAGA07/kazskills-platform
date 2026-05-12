@@ -1,6 +1,21 @@
-import React, { createContext, useContext, useMemo, useState, useCallback } from 'react';
+import React, { createContext, useContext, useMemo, useState, useEffect, useCallback } from 'react';
 import type { User, UserRole } from './AuthContext';
 import { userBelongsToCurrentTenant, getOrganizationSlug } from '../lib/organization';
+import { projectId, publicAnonKey } from '/utils/supabase/info';
+
+const BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3ed1835c`;
+const HEADERS = { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` };
+const STORAGE_KEY = 'kazskills_managed_users';
+
+// Background sync to server; failures are logged but never thrown (UI stays responsive).
+async function bgFetch(path: string, init?: RequestInit) {
+  try {
+    const res = await fetch(`${BASE}${path}`, { ...init, headers: { ...HEADERS, ...(init?.headers ?? {}) } });
+    if (!res.ok) console.warn(`User sync ${path} failed:`, await res.text());
+  } catch (e) {
+    console.warn(`User sync ${path} error:`, e);
+  }
+}
 
 export interface ManagedUser extends User {
   password: string;
@@ -242,12 +257,44 @@ const UsersContext = createContext<UsersContextType>({
 export function UsersProvider({ children }: { children: React.ReactNode }) {
   const [allUsers, setAllUsers] = useState<ManagedUser[]>(() => {
     try {
-      const saved = localStorage.getItem('kazskills_managed_users');
+      const saved = localStorage.getItem(STORAGE_KEY);
       return saved ? JSON.parse(saved) : INITIAL_USERS;
     } catch {
       return INITIAL_USERS;
     }
   });
+
+  // Initial sync: fetch from server. If server is empty, seed with our current state
+  // (so existing localStorage data isn't lost on first migration).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${BASE}/users`, { headers: HEADERS });
+        if (!res.ok) return;
+        const data: ManagedUser[] = await res.json();
+        if (cancelled) return;
+        if (Array.isArray(data) && data.length > 0) {
+          setAllUsers(data);
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        } else {
+          // Server empty — seed with whatever we currently have (cache or INITIAL_USERS).
+          const seed = (() => {
+            try {
+              const c = localStorage.getItem(STORAGE_KEY);
+              return c ? (JSON.parse(c) as ManagedUser[]) : INITIAL_USERS;
+            } catch {
+              return INITIAL_USERS;
+            }
+          })();
+          bgFetch('/users/replace-all', { method: 'POST', body: JSON.stringify(seed) });
+        }
+      } catch (e) {
+        console.warn('Initial user sync failed, using local cache:', e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   // Tenant-scoped view: on root domain shows everything, on subdomain only that org's users.
   const users = useMemo(() => {
@@ -257,7 +304,7 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
 
   const persist = (updated: ManagedUser[]) => {
     setAllUsers(updated);
-    localStorage.setItem('kazskills_managed_users', JSON.stringify(updated));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
   };
 
   const addUser = useCallback((userData: NewUserInput) => {
@@ -269,10 +316,14 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
       completedCourses: [],
     };
     persist([...allUsers, newUser]);
+    bgFetch('/users', { method: 'POST', body: JSON.stringify(newUser) });
   }, [allUsers]);
 
   const updateUser = useCallback((id: string, updates: Partial<ManagedUser>) => {
-    persist(allUsers.map(u => u.id === id ? { ...u, ...updates } : u));
+    const next = allUsers.map(u => u.id === id ? { ...u, ...updates } : u);
+    persist(next);
+    const updated = next.find(u => u.id === id);
+    if (updated) bgFetch(`/users/${id}`, { method: 'PUT', body: JSON.stringify(updated) });
   }, [allUsers]);
 
   const addUsersBatch = useCallback((
@@ -299,15 +350,20 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
       requestNumber,
     }));
     persist([...allUsers, ...newUsers]);
+    bgFetch('/users/batch', { method: 'POST', body: JSON.stringify(newUsers) });
     return newUsers;
   }, [allUsers]);
 
   const deleteUser = useCallback((id: string) => {
     persist(allUsers.filter(u => u.id !== id));
+    bgFetch(`/users/${id}`, { method: 'DELETE' });
   }, [allUsers]);
 
   const toggleStatus = useCallback((id: string) => {
-    persist(allUsers.map(u => u.id === id ? { ...u, status: u.status === 'active' ? 'blocked' : 'active' } : u));
+    const next = allUsers.map(u => u.id === id ? { ...u, status: (u.status === 'active' ? 'blocked' : 'active') as 'active' | 'blocked' } : u);
+    persist(next);
+    const updated = next.find(u => u.id === id);
+    if (updated) bgFetch(`/users/${id}`, { method: 'PUT', body: JSON.stringify({ status: updated.status }) });
   }, [allUsers]);
 
   return (
