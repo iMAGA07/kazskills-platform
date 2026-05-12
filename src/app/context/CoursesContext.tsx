@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import React, { createContext, useContext, useMemo, useState, useEffect, useCallback, ReactNode } from 'react';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { getOrganizationSlug } from '../lib/organization';
 
 const BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3ed1835c`;
 const HEADERS = { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` };
@@ -46,6 +47,8 @@ export interface Course {
   enrolledCount: number;
   lessons: Lesson[];
   test: TestConfig;
+  /** Tenant slug this course belongs to. Undefined = global (visible to all tenants). */
+  organizationSlug?: string;
 }
 
 export interface CourseInput {
@@ -54,6 +57,7 @@ export interface CourseInput {
   published: boolean;
   lessons: Lesson[];
   test: TestConfig;
+  organizationSlug?: string;
 }
 
 // ─── Progress Types ───────────────────────────────────────────────────────────
@@ -80,7 +84,10 @@ export interface UserProgress {
 
 // ─── Context ──────────────────────────────────────────────────────────────────
 interface CoursesContextValue {
+  /** Courses scoped to the current tenant: tenant's own + global courses. */
   courses: Course[];
+  /** All courses across all tenants (super-admin view). */
+  allCourses: Course[];
   loading: boolean;
   error: string | null;
   refetch: () => Promise<void>;
@@ -103,10 +110,22 @@ interface CoursesContextValue {
 const CoursesContext = createContext<CoursesContextValue | null>(null);
 
 export function CoursesProvider({ children }: { children: ReactNode }) {
-  const [courses, setCourses]   = useState<Course[]>([]);
+  const [allCourses, setAllCourses] = useState<Course[]>([]);
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState<string | null>(null);
   const [progressCache, setProgressCache] = useState<Record<string, UserProgress>>({});
+
+  /**
+   * On a tenant subdomain, show only:
+   *   - courses tagged with that tenant slug
+   *   - global courses (no slug — legacy/shared)
+   * On root domain (super-admin), show everything.
+   */
+  const courses = useMemo(() => {
+    const tenant = getOrganizationSlug();
+    if (!tenant) return allCourses;
+    return allCourses.filter(c => !c.organizationSlug || c.organizationSlug === tenant);
+  }, [allCourses]);
 
   const fetchCourses = useCallback(async () => {
     setLoading(true);
@@ -115,7 +134,7 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
       const res  = await fetch(`${BASE}/courses`, { headers: HEADERS });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Failed to fetch courses');
-      setCourses(Array.isArray(data) ? data : []);
+      setAllCourses(Array.isArray(data) ? data : []);
     } catch (e: any) {
       console.error('CoursesContext fetchCourses:', e);
       setError(e.message);
@@ -127,12 +146,17 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
   useEffect(() => { fetchCourses(); }, [fetchCourses]);
 
   const createCourse = useCallback(async (input: CourseInput): Promise<Course> => {
+    // Auto-tag with the current tenant slug if not explicitly set.
+    const payload: CourseInput = {
+      ...input,
+      organizationSlug: input.organizationSlug ?? getOrganizationSlug() ?? undefined,
+    };
     const res  = await fetch(`${BASE}/courses`, {
-      method: 'POST', headers: HEADERS, body: JSON.stringify(input),
+      method: 'POST', headers: HEADERS, body: JSON.stringify(payload),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? 'Failed to create course');
-    setCourses(prev => [...prev, data]);
+    setAllCourses(prev => [...prev, data]);
     return data;
   }, []);
 
@@ -142,7 +166,7 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? 'Failed to update course');
-    setCourses(prev => prev.map(c => c.id === id ? data : c));
+    setAllCourses(prev => prev.map(c => c.id === id ? data : c));
     return data;
   }, []);
 
@@ -154,10 +178,10 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
       const data = await res.json();
       throw new Error(data.error ?? 'Failed to delete course');
     }
-    setCourses(prev => prev.filter(c => c.id !== id));
+    setAllCourses(prev => prev.filter(c => c.id !== id));
   }, []);
 
-  const getCourse = useCallback((id: string) => courses.find(c => c.id === id), [courses]);
+  const getCourse = useCallback((id: string) => allCourses.find(c => c.id === id), [allCourses]);
 
   // ── Progress API ──
   const getProgress = useCallback(async (userId: string, courseId: string): Promise<UserProgress> => {
@@ -206,7 +230,7 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
 
   return (
     <CoursesContext.Provider value={{
-      courses, loading, error,
+      courses, allCourses, loading, error,
       refetch: fetchCourses,
       createCourse, updateCourse, deleteCourse, getCourse,
       getProgress, markLessonComplete, saveAttempt, getUserProgress,

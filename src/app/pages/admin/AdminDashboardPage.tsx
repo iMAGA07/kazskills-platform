@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { useUsers, type ManagedUser, type BatchUserInput } from '../../context/UsersContext';
 import { useCourses, UserProgress } from '../../context/CoursesContext';
+import { getCurrentOrganization } from '../../lib/organization';
 import {
   IcUserPlus, IcPlus, IcClose, IcChevronDown, IcTeam,
   IcBook, IcDocument, IcCheck, IcDownload, IcTrash,
@@ -336,6 +337,7 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
   const { courses } = useCourses();
   const { users } = useUsers();
   const publishedCourses = courses.filter(c => c.published);
+  const tenantOrg = getCurrentOrganization();
 
   const organizations = [...new Set(users.filter(u => u.role === 'student').map(u => u.organization))].sort();
 
@@ -343,7 +345,7 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
 
   // Step 1
   const [requestNumber, setRequestNumber] = useState('');
-  const [org, setOrg] = useState('');
+  const [org, setOrg] = useState(tenantOrg?.fullName ?? '');
   const [customOrg, setCustomOrg] = useState(false);
   const [department, setDepartment] = useState('');
 
@@ -367,7 +369,7 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
     if (open) {
       setStep(1);
       setRequestNumber('');
-      setOrg('');
+      setOrg(tenantOrg?.fullName ?? '');
       setCustomOrg(false);
       setDepartment('');
       setEmployees([{ id: '1', name: '', position: '', login: genLogin6(), password: genPassword4(), courses: [] }]);
@@ -576,7 +578,23 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
                 <label style={{ fontSize: 12, fontWeight: 600, color: '#374151', display: 'block', marginBottom: 5 }}>
                   Организация <span style={{ color: '#DC2626' }}>*</span>
                 </label>
-                {customOrg ? (
+                {tenantOrg ? (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '10px 14px', borderRadius: 8,
+                    background: '#EBF1FE', border: '1.5px solid #D6E0FF',
+                  }}>
+                    <IcBuilding size={15} color="#2B5CE6" />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: '#1B3D84' }}>
+                        {tenantOrg.fullName}
+                      </div>
+                      <div style={{ fontSize: 11, color: '#6B7280' }}>
+                        Привязано к поддомену {tenantOrg.slug}.kazskills.kz
+                      </div>
+                    </div>
+                  </div>
+                ) : customOrg ? (
                   <div style={{ display: 'flex', gap: 8 }}>
                     <input
                       value={org}

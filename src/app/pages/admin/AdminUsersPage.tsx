@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useUsers, type ManagedUser } from '../../context/UsersContext';
 import { useCourses } from '../../context/CoursesContext';
+import { getCurrentOrganization } from '../../lib/organization';
 import {
   IcSearch, IcFilter, IcUserPlus, IcPerson, IcShield, IcTeam,
   IcBook, IcMedal, IcEdit, IcTrash, IcClose, IcBuilding,
@@ -189,6 +190,7 @@ function UserFormModal({ open, onClose, editUser, organizations }: {
   const { addUser, updateUser } = useUsers();
   const { courses } = useCourses();
   const publishedCourses = courses.filter(c => c.published);
+  const tenantOrg = getCurrentOrganization();
 
   const [form, setForm] = useState<FormData>(EMPTY_FORM);
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
@@ -213,7 +215,11 @@ function UserFormModal({ open, onClose, editUser, organizations }: {
         });
         setCustomOrg(!organizations.includes(editUser.organization));
       } else {
-        setForm(EMPTY_FORM);
+        setForm({
+          ...EMPTY_FORM,
+          // On a tenant subdomain, auto-bind the new user to that org.
+          organization: tenantOrg ? tenantOrg.fullName : '',
+        });
         setCustomOrg(false);
       }
       setErrors({});
@@ -426,7 +432,23 @@ function UserFormModal({ open, onClose, editUser, organizations }: {
               </div>
 
               <Field label="Компания" required>
-                {customOrg ? (
+                {tenantOrg ? (
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: '10px',
+                    padding: '10px 14px', borderRadius: '8px',
+                    background: '#EBF1FE', border: '1.5px solid #D6E0FF',
+                  }}>
+                    <IcBuilding size={15} color="#2B5CE6" />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#1B3D84' }}>
+                        {tenantOrg.fullName}
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#6B7280' }}>
+                        Привязано к поддомену {tenantOrg.slug}.kazskills.kz
+                      </div>
+                    </div>
+                  </div>
+                ) : customOrg ? (
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <input
                       value={form.organization} onChange={e => set('organization', e.target.value)}
@@ -460,7 +482,7 @@ function UserFormModal({ open, onClose, editUser, organizations }: {
                     ]}
                   />
                 )}
-                {errors.organization && <span style={{ fontSize: '11.5px', color: '#DC2626' }}>{errors.organization}</span>}
+                {errors.organization && !tenantOrg && <span style={{ fontSize: '11.5px', color: '#DC2626' }}>{errors.organization}</span>}
               </Field>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
