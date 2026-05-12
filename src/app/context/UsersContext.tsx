@@ -1,5 +1,6 @@
-import React, { createContext, useContext, useState, useCallback } from 'react';
+import React, { createContext, useContext, useMemo, useState, useCallback } from 'react';
 import type { User, UserRole } from './AuthContext';
+import { userBelongsToCurrentTenant, getOrganizationSlug } from '../lib/organization';
 
 export interface ManagedUser extends User {
   password: string;
@@ -217,7 +218,10 @@ export interface BatchUserInput {
 }
 
 interface UsersContextType {
+  /** Users scoped to the current tenant (filtered by subdomain). */
   users: ManagedUser[];
+  /** All users across all tenants — for super-admin use only. */
+  allUsers: ManagedUser[];
   addUser: (user: NewUserInput) => void;
   addUsersBatch: (batch: BatchUserInput[], org: string, department: string, requestNumber: string) => ManagedUser[];
   updateUser: (id: string, updates: Partial<ManagedUser>) => void;
@@ -227,6 +231,7 @@ interface UsersContextType {
 
 const UsersContext = createContext<UsersContextType>({
   users: INITIAL_USERS,
+  allUsers: INITIAL_USERS,
   addUser: () => {},
   addUsersBatch: () => [],
   updateUser: () => {},
@@ -235,7 +240,7 @@ const UsersContext = createContext<UsersContextType>({
 });
 
 export function UsersProvider({ children }: { children: React.ReactNode }) {
-  const [users, setUsers] = useState<ManagedUser[]>(() => {
+  const [allUsers, setAllUsers] = useState<ManagedUser[]>(() => {
     try {
       const saved = localStorage.getItem('kazskills_managed_users');
       return saved ? JSON.parse(saved) : INITIAL_USERS;
@@ -244,8 +249,14 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
     }
   });
 
+  // Tenant-scoped view: on root domain shows everything, on subdomain only that org's users.
+  const users = useMemo(() => {
+    if (!getOrganizationSlug()) return allUsers;
+    return allUsers.filter(u => userBelongsToCurrentTenant(u.organization));
+  }, [allUsers]);
+
   const persist = (updated: ManagedUser[]) => {
-    setUsers(updated);
+    setAllUsers(updated);
     localStorage.setItem('kazskills_managed_users', JSON.stringify(updated));
   };
 
@@ -257,12 +268,12 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
       enrolledCourses: userData.enrolledCourses ?? [],
       completedCourses: [],
     };
-    persist([...users, newUser]);
-  }, [users]);
+    persist([...allUsers, newUser]);
+  }, [allUsers]);
 
   const updateUser = useCallback((id: string, updates: Partial<ManagedUser>) => {
-    persist(users.map(u => u.id === id ? { ...u, ...updates } : u));
-  }, [users]);
+    persist(allUsers.map(u => u.id === id ? { ...u, ...updates } : u));
+  }, [allUsers]);
 
   const addUsersBatch = useCallback((
     batch: BatchUserInput[],
@@ -287,20 +298,20 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
       status: 'active' as const,
       requestNumber,
     }));
-    persist([...users, ...newUsers]);
+    persist([...allUsers, ...newUsers]);
     return newUsers;
-  }, [users]);
+  }, [allUsers]);
 
   const deleteUser = useCallback((id: string) => {
-    persist(users.filter(u => u.id !== id));
-  }, [users]);
+    persist(allUsers.filter(u => u.id !== id));
+  }, [allUsers]);
 
   const toggleStatus = useCallback((id: string) => {
-    persist(users.map(u => u.id === id ? { ...u, status: u.status === 'active' ? 'blocked' : 'active' } : u));
-  }, [users]);
+    persist(allUsers.map(u => u.id === id ? { ...u, status: u.status === 'active' ? 'blocked' : 'active' } : u));
+  }, [allUsers]);
 
   return (
-    <UsersContext.Provider value={{ users, addUser, addUsersBatch, updateUser, deleteUser, toggleStatus }}>
+    <UsersContext.Provider value={{ users, allUsers, addUser, addUsersBatch, updateUser, deleteUser, toggleStatus }}>
       {children}
     </UsersContext.Provider>
   );

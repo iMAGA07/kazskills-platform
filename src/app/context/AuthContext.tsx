@@ -1,6 +1,9 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
+import { getOrganizationSlug, slugForLegacyOrgName } from '../lib/organization';
 
 export type UserRole = 'admin' | 'student';
+
+export type LoginResult = { ok: true } | { ok: false; reason: 'invalid' | 'wrong_tenant' };
 
 export interface User {
   id: string;
@@ -18,7 +21,7 @@ export interface User {
 
 interface AuthContextType {
   user: User | null;
-  login: (email: string, password: string) => Promise<boolean>;
+  login: (email: string, password: string) => Promise<LoginResult>;
   logout: () => void;
   updateUser: (updates: Partial<User>) => void;
 }
@@ -78,7 +81,7 @@ const MOCK_USERS: (User & { password: string })[] = [
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
-  login: async () => false,
+  login: async () => ({ ok: false, reason: 'invalid' }),
   logout: () => {},
   updateUser: () => {},
 });
@@ -86,11 +89,40 @@ const AuthContext = createContext<AuthContextType>({
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(() => {
     const saved = localStorage.getItem('kazskills_user');
-    return saved ? JSON.parse(saved) : null;
+    if (!saved) return null;
+    try {
+      const parsed: User = JSON.parse(saved);
+      // If we're on a tenant subdomain, the restored user must belong to it.
+      const tenantSlug = getOrganizationSlug();
+      if (tenantSlug) {
+        const userSlug = slugForLegacyOrgName(parsed.organization);
+        if (userSlug !== tenantSlug) {
+          localStorage.removeItem('kazskills_user');
+          return null;
+        }
+      }
+      return parsed;
+    } catch {
+      return null;
+    }
   });
 
-  const login = useCallback(async (email: string, password: string): Promise<boolean> => {
+  const login = useCallback(async (email: string, password: string): Promise<LoginResult> => {
     await new Promise(r => setTimeout(r, 800));
+    const tenantSlug = getOrganizationSlug();
+
+    const acceptIfTenantMatches = (candidate: User): LoginResult => {
+      if (tenantSlug) {
+        const userSlug = slugForLegacyOrgName(candidate.organization);
+        if (userSlug !== tenantSlug) {
+          return { ok: false, reason: 'wrong_tenant' };
+        }
+      }
+      setUser(candidate);
+      localStorage.setItem('kazskills_user', JSON.stringify(candidate));
+      return { ok: true };
+    };
+
     // Check dynamically managed users first (from UsersContext storage)
     try {
       const stored = localStorage.getItem('kazskills_managed_users');
@@ -99,9 +131,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const found = managedUsers.find((u: any) => u.email === email && u.password === password && u.status !== 'blocked');
         if (found) {
           const { password: _, status: __, createdAt: ___, ...userWithoutPass } = found;
-          setUser(userWithoutPass);
-          localStorage.setItem('kazskills_user', JSON.stringify(userWithoutPass));
-          return true;
+          return acceptIfTenantMatches(userWithoutPass);
         }
       }
     } catch {}
@@ -109,11 +139,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const found = MOCK_USERS.find(u => u.email === email && u.password === password);
     if (found) {
       const { password: _, ...userWithoutPass } = found;
-      setUser(userWithoutPass);
-      localStorage.setItem('kazskills_user', JSON.stringify(userWithoutPass));
-      return true;
+      return acceptIfTenantMatches(userWithoutPass);
     }
-    return false;
+    return { ok: false, reason: 'invalid' };
   }, []);
 
   const logout = useCallback(() => {

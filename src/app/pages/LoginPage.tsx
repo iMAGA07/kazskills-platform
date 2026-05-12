@@ -27,10 +27,17 @@ export default function LoginPage() {
     e.preventDefault();
     setError('');
     setLoading(true);
-    const ok = await login(email, password);
+    const result = await login(email, password);
     setLoading(false);
-    if (ok) navigate(role === 'admin' ? '/admin/dashboard' : '/student/courses');
-    else setError(t('auth.error'));
+    if (result.ok) {
+      navigate(role === 'admin' ? '/admin/dashboard' : '/student/courses');
+    } else if (result.reason === 'wrong_tenant') {
+      setError(orgName
+        ? `Эта учётная запись не относится к организации ${orgName}`
+        : 'Учётная запись не относится к этой организации');
+    } else {
+      setError(t('auth.error'));
+    }
   };
 
   const fillDemo = () => {
