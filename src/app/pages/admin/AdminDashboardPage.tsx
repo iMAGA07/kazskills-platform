@@ -39,11 +39,15 @@ function hdrCell(text: string, widthPct: number) {
   });
 }
 function dataCell(text: string, center = false) {
+  // Split on "\n" so multi-line strings render as multiple paragraphs
+  // inside the same table cell (one paragraph per item — used in the
+  // "Назначенные курсы" column of the credentials report).
+  const lines = String(text ?? '').split('\n');
   return new TableCell({
-    children: [new Paragraph({
+    children: lines.map(line => new Paragraph({
       alignment: center ? AlignmentType.CENTER : AlignmentType.LEFT,
-      children: [new TextRun({ text, size: 20 })],
-    })],
+      children: [new TextRun({ text: line, size: 20 })],
+    })),
   });
 }
 function makeTable(header: TableRow, rows: TableRow[]) {
@@ -75,6 +79,10 @@ const fmtDate = (iso: string) =>
 const todayStr = () => new Date().toLocaleDateString('ru-RU');
 const fileDate = () => new Date().toLocaleDateString('ru-RU').replace(/\./g, '-');
 
+// Helper: whether the user is enrolled in this course.
+const isEnrolled = (u: ManagedUser, courseId: string) =>
+  (u.enrolledCourses ?? []).includes(courseId);
+
 async function generateZayavka(
   org: string,
   users: ManagedUser[],
@@ -84,7 +92,11 @@ async function generateZayavka(
 ) {
   const students = users.filter(u => u.role === 'student' && u.organization === org
     && (!requestNum || u.requestNumber === requestNum));
-  const published = courses.filter(c => c.published);
+  // Only courses that have at least one student enrolled — no point listing
+  // a course nobody from this batch needs.
+  const relevant = courses
+    .filter(c => c.published)
+    .filter(c => students.some(u => isEnrolled(u, c.id)));
 
   const children: (Paragraph | Table)[] = [
     new Paragraph({
@@ -110,14 +122,18 @@ async function generateZayavka(
 
   if (students.length === 0) {
     children.push(new Paragraph({ children: [new TextRun({ text: 'Слушатели не найдены.', size: 22, color: 'CC0000' })] }));
+  } else if (relevant.length === 0) {
+    children.push(new Paragraph({ children: [new TextRun({ text: 'Ни одному слушателю не назначены курсы.', size: 22, color: 'CC0000' })] }));
   }
 
-  for (const course of published) {
+  for (const course of relevant) {
+    const enrolledStudents = students.filter(u => isEnrolled(u, course.id));
+    if (enrolledStudents.length === 0) continue;
+
     children.push(new Paragraph({
       spacing: { before: 500, after: 160 },
       children: [new TextRun({ text: `«${course.title}»`, bold: true, size: 24 })],
     }));
-    if (students.length === 0) continue;
     const hdr = new TableRow({
       tableHeader: true,
       children: [
@@ -125,7 +141,7 @@ async function generateZayavka(
         hdrCell('Должность', 2400), hdrCell('Дата прохождения курса', 2400),
       ],
     });
-    const rows = students.map((u, i) => {
+    const rows = enrolledStudents.map((u, i) => {
       const prog = progressMap[`${u.id}:${course.id}`];
       const passing = prog?.attempts?.filter(a => a.passed).sort((a, b) => b.completedAt.localeCompare(a.completedAt))[0];
       const date = passing ? fmtDate(passing.completedAt) : '—';
@@ -151,6 +167,7 @@ async function generateLoginsPasswords(
   const students = users.filter(u => u.role === 'student' && u.organization === org
     && (!requestNum || u.requestNumber === requestNum));
   const published = courses.filter(c => c.published);
+  const titleById = new Map(published.map(c => [c.id, c.title]));
 
   const children: (Paragraph | Table)[] = [
     new Paragraph({
@@ -176,25 +193,36 @@ async function generateLoginsPasswords(
 
   if (students.length === 0) {
     children.push(new Paragraph({ children: [new TextRun({ text: 'Слушатели не найдены.', size: 22, color: 'CC0000' })] }));
-  }
-
-  for (const course of published) {
-    children.push(new Paragraph({
-      spacing: { before: 500, after: 160 },
-      children: [new TextRun({ text: `«${course.title}»`, bold: true, size: 24 })],
-    }));
-    if (students.length === 0) continue;
+  } else {
+    // One unified table: each row = one user. The "Назначенные курсы" column
+    // lists the titles of the courses assigned to that user.
     const hdr = new TableRow({
       tableHeader: true,
       children: [
-        hdrCell('№', 600), hdrCell('Ф. И. О', 2600),
-        hdrCell('Должность', 2200), hdrCell('Логин', 1800), hdrCell('Пароль', 1200),
+        hdrCell('№', 500),
+        hdrCell('Ф. И. О', 2600),
+        hdrCell('Должность', 2000),
+        hdrCell('Логин', 1500),
+        hdrCell('Пароль', 1100),
+        hdrCell('Назначенные курсы', 3000),
       ],
     });
-    const rows = students.map((u, i) => new TableRow({ children: [
-      dataCell(String(i + 1), true), dataCell(u.name),
-      dataCell(u.position || '—'), dataCell(u.email), dataCell(u.password || '—'),
-    ]}));
+    const rows = students.map((u, i) => {
+      const titles = (u.enrolledCourses ?? [])
+        .map(id => titleById.get(id))
+        .filter(Boolean) as string[];
+      const coursesText = titles.length > 0
+        ? titles.map((t, idx) => `${idx + 1}. ${t}`).join('\n')
+        : '—';
+      return new TableRow({ children: [
+        dataCell(String(i + 1), true),
+        dataCell(u.name),
+        dataCell(u.position || '—'),
+        dataCell(u.email),
+        dataCell(u.password || '—'),
+        dataCell(coursesText),
+      ]});
+    });
     children.push(makeTable(hdr, rows));
   }
 
@@ -212,7 +240,11 @@ async function generateStatistika(
 ) {
   const students = users.filter(u => u.role === 'student' && u.organization === org
     && (!requestNum || u.requestNumber === requestNum));
-  const published = courses.filter(c => c.published);
+  // Only courses that are assigned to at least one student in the report —
+  // no point showing a column nobody uses.
+  const relevant = courses
+    .filter(c => c.published)
+    .filter(c => students.some(u => isEnrolled(u, c.id)));
 
   const children: (Paragraph | Table)[] = [
     new Paragraph({
@@ -236,30 +268,43 @@ async function generateStatistika(
     children: [new TextRun({ text: `Дата формирования: ${todayStr()}`, size: 20, color: '666666' })],
   }));
 
-  const colW = Math.floor(5000 / Math.max(published.length, 1));
-  const hdrCells = [
-    hdrCell('№', 600), hdrCell('Ф. И. О', 2400),
-    ...published.map(c => hdrCell(c.title.length > 20 ? c.title.slice(0, 18) + '…' : c.title, colW)),
-  ];
-  const hdr = new TableRow({ tableHeader: true, children: hdrCells });
-
-  const rows = students.map((u, i) => {
-    const cells = [
-      dataCell(String(i + 1), true), dataCell(u.name),
-      ...published.map(c => {
-        const prog = progressMap[`${u.id}:${c.id}`];
-        if (!prog || prog.attempts.length === 0) return dataCell('—', true);
-        const best = prog.attempts.filter(a => a.passed).sort((a, b) => b.score - a.score)[0]
-          ?? prog.attempts.sort((a, b) => b.completedAt.localeCompare(a.completedAt))[0];
-        return dataCell(best ? `${Math.round(best.score)}%` : '—', true);
-      }),
-    ];
-    return new TableRow({ children: cells });
-  });
-
-  children.push(makeTable(hdr, rows));
   if (students.length === 0) {
     children.push(new Paragraph({ children: [new TextRun({ text: 'Слушатели не найдены.', size: 22, color: 'CC0000' })] }));
+  } else if (relevant.length === 0) {
+    children.push(new Paragraph({ children: [new TextRun({ text: 'Ни одному слушателю не назначены курсы.', size: 22, color: 'CC0000' })] }));
+  } else {
+    const colW = Math.floor(5000 / relevant.length);
+    const hdrCells = [
+      hdrCell('№', 600), hdrCell('Ф. И. О', 2400),
+      ...relevant.map(c => hdrCell(c.title.length > 20 ? c.title.slice(0, 18) + '…' : c.title, colW)),
+    ];
+    const hdr = new TableRow({ tableHeader: true, children: hdrCells });
+
+    const rows = students.map((u, i) => {
+      const cells = [
+        dataCell(String(i + 1), true), dataCell(u.name),
+        ...relevant.map(c => {
+          if (!isEnrolled(u, c.id)) return dataCell('—', true); // not assigned
+          const prog = progressMap[`${u.id}:${c.id}`];
+          if (!prog || prog.attempts.length === 0) return dataCell('не сдавал', true);
+          const best = prog.attempts.filter(a => a.passed).sort((a, b) => b.score - a.score)[0]
+            ?? prog.attempts.sort((a, b) => b.completedAt.localeCompare(a.completedAt))[0];
+          return dataCell(best ? `${Math.round(best.score)}%` : '—', true);
+        }),
+      ];
+      return new TableRow({ children: cells });
+    });
+
+    children.push(makeTable(hdr, rows));
+
+    // Legend so the reader doesn't guess what "—" vs "не сдавал" means.
+    children.push(new Paragraph({
+      spacing: { before: 200 },
+      children: [new TextRun({
+        text: '«—» — курс не назначен слушателю. «не сдавал» — курс назначен, но попыток ещё не было. «N%» — лучший результат из сданных попыток.',
+        size: 18, italics: true, color: '6B7280',
+      })],
+    }));
   }
 
   const doc = new Document({ sections: [{ children }] });
@@ -1090,9 +1135,9 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
 type ReportType = 'zayavka' | 'logins' | 'statistika';
 
 const REPORT_TYPES: { value: ReportType; label: string; desc: string; icon: React.ElementType }[] = [
-  { value: 'zayavka',    label: 'Заявка',           desc: 'ФИО · Должность · Дата прохождения курса', icon: IcDocument },
-  { value: 'logins',     label: 'Логины и пароли',  desc: 'ФИО · Должность · Логин · Пароль',         icon: IcBook },
-  { value: 'statistika', label: 'Статистика',        desc: 'ФИО · Баллы по каждому курсу (%)',          icon: IcTeam },
+  { value: 'zayavka',    label: 'Заявка',           desc: 'По каждому назначенному курсу: ФИО · Должность · Дата прохождения', icon: IcDocument },
+  { value: 'logins',     label: 'Логины и пароли',  desc: 'ФИО · Должность · Логин · Пароль · Назначенные курсы',              icon: IcBook },
+  { value: 'statistika', label: 'Статистика',        desc: 'Матрица слушатель × назначенный курс с % сдачи',                    icon: IcTeam },
 ];
 
 function ReportModal({ open, onClose }: { open: boolean; onClose: () => void }) {
