@@ -538,8 +538,19 @@ interface ServerOrganization {
   slug: string;
   displayName: string;
   fullName: string;
+  logoUrl?: string;
   legacyAliases?: string[];
   createdAt?: string;
+}
+
+/** Count users that belong to this organization (by fullName / displayName / aliases match). */
+async function countOrgMembers(org: ServerOrganization): Promise<number> {
+  const users = await getAllUsers();
+  const names = new Set<string>([
+    org.fullName, org.displayName,
+    ...(org.legacyAliases ?? []),
+  ].map(s => s.toLowerCase().trim()).filter(Boolean));
+  return users.filter(u => u.organization && names.has(u.organization.toLowerCase().trim())).length;
 }
 
 const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,28}[a-z0-9])?$/; // 1-30 chars, lower, may contain dashes
@@ -581,6 +592,7 @@ app.post("/make-server-3ed1835c/organizations", requireAuth, requireAdmin, async
       slug,
       displayName: body.displayName.trim(),
       fullName: body.fullName.trim(),
+      logoUrl: typeof body.logoUrl === 'string' ? body.logoUrl : undefined,
       legacyAliases: Array.isArray(body.legacyAliases) ? body.legacyAliases : [],
       createdAt: new Date().toISOString(),
     };
@@ -604,6 +616,10 @@ app.put("/make-server-3ed1835c/organizations/:slug", requireAuth, requireAdmin, 
       ...existing,
       displayName: body.displayName?.trim() || existing.displayName,
       fullName: body.fullName?.trim() || existing.fullName,
+      // logoUrl supports explicit null to clear it
+      logoUrl: 'logoUrl' in body
+        ? (typeof body.logoUrl === 'string' ? body.logoUrl : undefined)
+        : existing.logoUrl,
       legacyAliases: Array.isArray(body.legacyAliases) ? body.legacyAliases : existing.legacyAliases,
       slug, // immutable
     };
@@ -615,12 +631,26 @@ app.put("/make-server-3ed1835c/organizations/:slug", requireAuth, requireAdmin, 
   }
 });
 
-// DELETE /organizations/:slug — admin only
+// DELETE /organizations/:slug — admin only.
+// Refuses with 409 if users still belong to the org, unless ?force=true.
 app.delete("/make-server-3ed1835c/organizations/:slug", requireAuth, requireAdmin, async (c) => {
   try {
     const slug = c.req.param("slug");
+    const force = c.req.query("force") === "true";
+
+    const org = (await kv.get(`org:${slug}`)) as ServerOrganization | null;
+    if (!org) return c.json({ error: "Organization not found" }, 404);
+
+    const memberCount = await countOrgMembers(org);
+    if (memberCount > 0 && !force) {
+      return c.json({
+        error: "Organization still has members",
+        userCount: memberCount,
+      }, 409);
+    }
+
     await kv.del(`org:${slug}`);
-    return c.json({ success: true });
+    return c.json({ success: true, deletedWithMembers: memberCount });
   } catch (err) {
     console.log("Error deleting organization:", err);
     return c.json({ error: `Failed to delete organization: ${err}` }, 500);

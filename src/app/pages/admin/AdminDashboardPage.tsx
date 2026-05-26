@@ -1842,30 +1842,49 @@ function RequestEditView({
 const SLUG_RX = /^[a-z0-9](?:[a-z0-9-]{0,28}[a-z0-9])?$/;
 
 function OrganizationsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const { organizations, createOrganization, updateOrganization, deleteOrganization } = useOrganizationsContext();
+  const { organizations, createOrganization, updateOrganization, deleteOrganization, uploadLogo } = useOrganizationsContext();
+  const { allUsers } = useUsers();
 
   const [mode, setMode] = useState<'list' | 'create' | { edit: string }>('list');
-  const [form, setForm] = useState({ slug: '', displayName: '', fullName: '' });
+  const [form, setForm] = useState<{ slug: string; displayName: string; fullName: string; logoUrl: string }>({
+    slug: '', displayName: '', fullName: '', logoUrl: '',
+  });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  // confirmDelete is { slug, userCount } — userCount > 0 means we require an extra confirm.
+  const [confirmDelete, setConfirmDelete] = useState<{ slug: string; userCount: number } | null>(null);
+
+  // Count users per organization. Match the same logic the server uses.
+  const userCountBySlug = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const o of organizations) {
+      const names = new Set([
+        o.fullName, o.displayName, ...(o.legacyAliases ?? []),
+      ].map(s => s?.toLowerCase().trim()).filter(Boolean) as string[]);
+      counts[o.slug] = allUsers.filter(u =>
+        u.organization && names.has(u.organization.toLowerCase().trim())
+      ).length;
+    }
+    return counts;
+  }, [organizations, allUsers]);
 
   useEffect(() => {
     if (!open) {
       setMode('list');
-      setForm({ slug: '', displayName: '', fullName: '' });
+      setForm({ slug: '', displayName: '', fullName: '', logoUrl: '' });
       setError('');
       setConfirmDelete(null);
     }
   }, [open]);
 
-  // When entering edit mode, prefill the form.
+  // When entering edit/create mode, prefill the form.
   useEffect(() => {
     if (typeof mode === 'object' && 'edit' in mode) {
       const o = organizations.find(x => x.slug === mode.edit);
-      if (o) setForm({ slug: o.slug, displayName: o.displayName, fullName: o.fullName });
+      if (o) setForm({ slug: o.slug, displayName: o.displayName, fullName: o.fullName, logoUrl: o.logoUrl ?? '' });
     } else if (mode === 'create') {
-      setForm({ slug: '', displayName: '', fullName: '' });
+      setForm({ slug: '', displayName: '', fullName: '', logoUrl: '' });
     }
     setError('');
   }, [mode]);
@@ -1898,9 +1917,14 @@ function OrganizationsModal({ open, onClose }: { open: boolean; onClose: () => v
     setBusy(true);
     try {
       if (mode === 'create') {
-        await createOrganization({ slug, displayName, fullName });
+        await createOrganization({ slug, displayName, fullName, logoUrl: form.logoUrl || undefined });
       } else if (typeof mode === 'object') {
-        await updateOrganization(mode.edit, { displayName, fullName });
+        await updateOrganization(mode.edit, {
+          displayName,
+          fullName,
+          // pass explicit null to clear if the user removed the logo
+          logoUrl: form.logoUrl ? form.logoUrl : null,
+        });
       }
       setMode('list');
     } catch (e: any) {
@@ -1910,11 +1934,44 @@ function OrganizationsModal({ open, onClose }: { open: boolean; onClose: () => v
     }
   };
 
-  const handleDelete = async (slug: string) => {
-    setBusy(true);
+  const handleLogoPick = async (file: File | null | undefined) => {
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      setError('Файл больше 2 МБ. Уменьшите размер.');
+      return;
+    }
+    if (!/^image\//.test(file.type)) {
+      setError('Нужен файл-изображение (PNG, JPG, SVG).');
+      return;
+    }
+    setError('');
+    setUploading(true);
     try {
-      await deleteOrganization(slug);
-      setConfirmDelete(null);
+      const url = await uploadLogo(file);
+      setForm(f => ({ ...f, logoUrl: url }));
+    } catch (e: any) {
+      setError(e?.message ?? 'Не удалось загрузить логотип.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const requestDelete = (slug: string) => {
+    setConfirmDelete({ slug, userCount: userCountBySlug[slug] ?? 0 });
+  };
+
+  const handleDelete = async (force = false) => {
+    if (!confirmDelete) return;
+    setBusy(true);
+    setError('');
+    try {
+      const r = await deleteOrganization(confirmDelete.slug, { force });
+      if (r.deleted) {
+        setConfirmDelete(null);
+      } else {
+        // Server reported members; surface the precise count for the confirm step.
+        setConfirmDelete({ slug: confirmDelete.slug, userCount: r.userCount ?? 0 });
+      }
     } catch (e: any) {
       setError(e?.message ?? 'Не удалось удалить.');
     } finally {
@@ -1972,62 +2029,72 @@ function OrganizationsModal({ open, onClose }: { open: boolean; onClose: () => v
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
-                  {organizations.map(o => (
-                    <div key={o.slug} style={{
-                      padding: '12px 14px', borderRadius: 10,
-                      border: `1.5px solid ${BORDER}`, background: '#FAFBFE',
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                        <div style={{
-                          width: 38, height: 38, borderRadius: 9, background: '#EBF1FE',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: 13, fontWeight: 700, color: NAVY,
-                        }}>
-                          {o.displayName.slice(0, 2).toUpperCase()}
-                        </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 14, fontWeight: 600, color: '#0F1629' }}>
-                            {o.displayName}
-                          </div>
-                          <div style={{ fontSize: 12, color: MUTED, marginTop: 1 }}>
-                            {o.fullName}
-                          </div>
-                          <a
-                            href={`https://${o.slug}.kazskills.kz`}
-                            target="_blank" rel="noreferrer"
-                            style={{
-                              display: 'inline-flex', alignItems: 'center', gap: 4,
-                              fontSize: 11.5, color: BLUE, marginTop: 4, textDecoration: 'none',
-                              fontWeight: 500,
-                            }}
-                          >
-                            {o.slug}.kazskills.kz ↗
-                          </a>
-                        </div>
-                        {confirmDelete === o.slug ? (
-                          <div style={{ display: 'flex', gap: 6 }}>
-                            <button onClick={() => setConfirmDelete(null)} style={{
-                              padding: '7px 10px', borderRadius: 7, border: `1px solid ${BORDER}`,
-                              background: '#fff', cursor: 'pointer', fontSize: 12, color: '#374151',
-                            }}>Отмена</button>
-                            <button
-                              onClick={() => handleDelete(o.slug)}
-                              disabled={busy}
+                  {organizations.map(o => {
+                    const count = userCountBySlug[o.slug] ?? 0;
+                    return (
+                      <div key={o.slug} style={{
+                        padding: '12px 14px', borderRadius: 10,
+                        border: `1.5px solid ${BORDER}`, background: '#FAFBFE',
+                      }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          {/* Logo / initials */}
+                          {o.logoUrl ? (
+                            <img
+                              src={o.logoUrl} alt={o.displayName}
                               style={{
-                                padding: '7px 12px', borderRadius: 7, border: 'none',
-                                background: '#DC2626', color: '#fff', cursor: 'pointer',
-                                fontSize: 12, fontWeight: 600,
+                                width: 42, height: 42, borderRadius: 9,
+                                objectFit: 'contain', background: '#fff',
+                                border: `1px solid ${BORDER}`,
                               }}
-                            >Удалить</button>
+                            />
+                          ) : (
+                            <div style={{
+                              width: 42, height: 42, borderRadius: 9, background: '#EBF1FE',
+                              display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              fontSize: 13, fontWeight: 700, color: NAVY,
+                            }}>
+                              {o.displayName.slice(0, 2).toUpperCase()}
+                            </div>
+                          )}
+
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span style={{ fontSize: 14, fontWeight: 600, color: '#0F1629' }}>
+                                {o.displayName}
+                              </span>
+                              <span style={{
+                                fontSize: 11, fontWeight: 600,
+                                padding: '2px 7px', borderRadius: 999,
+                                background: count > 0 ? '#EBF1FE' : '#F4F6FB',
+                                color: count > 0 ? BLUE : MUTED,
+                                whiteSpace: 'nowrap',
+                              }}>
+                                {count} {count === 1 ? 'юзер' : count > 1 && count < 5 ? 'юзера' : 'юзеров'}
+                              </span>
+                            </div>
+                            <div style={{ fontSize: 12, color: MUTED, marginTop: 1 }}>
+                              {o.fullName}
+                            </div>
+                            <a
+                              href={`https://${o.slug}.kazskills.kz`}
+                              target="_blank" rel="noreferrer"
+                              style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 4,
+                                fontSize: 11.5, color: BLUE, marginTop: 4, textDecoration: 'none',
+                                fontWeight: 500,
+                              }}
+                            >
+                              {o.slug}.kazskills.kz ↗
+                            </a>
                           </div>
-                        ) : (
+
                           <div style={{ display: 'flex', gap: 6 }}>
                             <button onClick={() => setMode({ edit: o.slug })} style={{
                               padding: '7px 12px', borderRadius: 7, border: `1px solid ${BORDER}`,
                               background: '#fff', cursor: 'pointer', fontSize: 12, color: '#374151',
                             }}>Изменить</button>
                             <button
-                              onClick={() => setConfirmDelete(o.slug)}
+                              onClick={() => requestDelete(o.slug)}
                               title="Удалить"
                               style={{
                                 padding: 8, borderRadius: 7, border: `1px solid ${BORDER}`,
@@ -2038,10 +2105,10 @@ function OrganizationsModal({ open, onClose }: { open: boolean; onClose: () => v
                               <IcTrash size={13} color="#9CA3AF" />
                             </button>
                           </div>
-                        )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
 
@@ -2056,6 +2123,78 @@ function OrganizationsModal({ open, onClose }: { open: boolean; onClose: () => v
               >
                 <IcPlus size={14} color={BLUE} /> Добавить организацию
               </button>
+
+              {/* Delete confirm dialog */}
+              {confirmDelete && (() => {
+                const target = organizations.find(x => x.slug === confirmDelete.slug);
+                const hasMembers = confirmDelete.userCount > 0;
+                return (
+                  <div style={{
+                    position: 'fixed', inset: 0, background: 'rgba(15,22,41,0.55)', zIndex: 1100,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  }} onClick={() => setConfirmDelete(null)}>
+                    <div onClick={e => e.stopPropagation()} style={{
+                      background: '#fff', borderRadius: 14, width: '90%', maxWidth: 460,
+                      padding: 22, boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+                    }}>
+                      <div style={{
+                        width: 48, height: 48, borderRadius: '50%',
+                        background: hasMembers ? '#FEF3C7' : '#FEE2E2',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        marginBottom: 12,
+                      }}>
+                        <IcWarning size={22} color={hasMembers ? '#B45309' : '#DC2626'} />
+                      </div>
+                      <h3 style={{ margin: '0 0 6px', fontSize: 16, color: '#0F1629' }}>
+                        Удалить «{target?.displayName ?? confirmDelete.slug}»?
+                      </h3>
+                      {hasMembers ? (
+                        <>
+                          <p style={{ margin: '0 0 8px', fontSize: 13, color: '#374151', lineHeight: 1.55 }}>
+                            В этой организации <strong>{confirmDelete.userCount}</strong> {confirmDelete.userCount === 1 ? 'учётная запись' : confirmDelete.userCount < 5 ? 'учётные записи' : 'учётных записей'}.
+                            Если удалить, эти юзеры останутся в системе, но перестанут попадать на свой поддомен (логин будет отвергнут).
+                          </p>
+                          <p style={{ margin: '0 0 14px', fontSize: 12.5, color: '#92400E', background: '#FEF3C7', padding: '10px 12px', borderRadius: 8, border: '1px solid #FDE68A' }}>
+                            Рекомендация: сначала перенесите юзеров в другую организацию или удалите их.
+                          </p>
+                        </>
+                      ) : (
+                        <p style={{ margin: '0 0 14px', fontSize: 13, color: '#374151', lineHeight: 1.55 }}>
+                          В организации нет пользователей. Удалить безопасно — поддомен освободится.
+                        </p>
+                      )}
+                      {error && (
+                        <div style={{
+                          padding: '8px 12px', borderRadius: 7, marginBottom: 10,
+                          background: '#FEF2F2', border: '1px solid #FECACA',
+                          color: '#991B1B', fontSize: 12,
+                        }}>{error}</div>
+                      )}
+                      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                        <button
+                          onClick={() => { setConfirmDelete(null); setError(''); }}
+                          disabled={busy}
+                          style={{
+                            padding: '9px 16px', borderRadius: 8, border: `1.5px solid ${BORDER}`,
+                            background: '#fff', color: '#374151', fontSize: 13, fontWeight: 500, cursor: 'pointer',
+                          }}>
+                          Отмена
+                        </button>
+                        <button
+                          onClick={() => handleDelete(hasMembers)}
+                          disabled={busy}
+                          style={{
+                            padding: '9px 18px', borderRadius: 8, border: 'none',
+                            background: '#DC2626', color: '#fff', fontSize: 13, fontWeight: 600,
+                            cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.6 : 1,
+                          }}>
+                          {hasMembers ? `Всё равно удалить (${confirmDelete.userCount})` : 'Удалить'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
             </>
           )}
 
@@ -2130,6 +2269,68 @@ function OrganizationsModal({ open, onClose }: { open: boolean; onClose: () => v
                 <p style={{ margin: '6px 0 0', fontSize: 11.5, color: '#9CA3AF' }}>
                   Используется в карточке клиента, в Word-отчётах и при создании юзеров.
                 </p>
+              </div>
+
+              {/* Logo upload */}
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>
+                  Логотип
+                </label>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 12,
+                  padding: 12, borderRadius: 9,
+                  border: `1.5px solid ${BORDER}`, background: '#FAFBFE',
+                }}>
+                  {form.logoUrl ? (
+                    <img src={form.logoUrl} alt="Logo preview" style={{
+                      width: 56, height: 56, borderRadius: 8, objectFit: 'contain',
+                      background: '#fff', border: `1px solid ${BORDER}`,
+                    }} />
+                  ) : (
+                    <div style={{
+                      width: 56, height: 56, borderRadius: 8, background: '#EBF1FE',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      color: '#9CA3AF', fontSize: 11, textAlign: 'center', lineHeight: 1.3,
+                    }}>
+                      Нет лого
+                    </div>
+                  )}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <label style={{
+                      display: 'inline-flex', alignItems: 'center', gap: 6,
+                      padding: '7px 12px', borderRadius: 7, border: `1.5px solid ${BORDER}`,
+                      background: '#fff', cursor: uploading ? 'not-allowed' : 'pointer',
+                      fontSize: 12, fontWeight: 500, color: '#374151',
+                      opacity: uploading ? 0.6 : 1,
+                    }}>
+                      {uploading ? 'Загрузка…' : (form.logoUrl ? 'Заменить' : 'Загрузить PNG/JPG/SVG')}
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                        onChange={e => { handleLogoPick(e.target.files?.[0]); e.currentTarget.value = ''; }}
+                        disabled={uploading}
+                        style={{ display: 'none' }}
+                      />
+                    </label>
+                    {form.logoUrl && (
+                      <button
+                        type="button"
+                        onClick={() => setForm(f => ({ ...f, logoUrl: '' }))}
+                        style={{
+                          marginLeft: 6,
+                          padding: '7px 10px', borderRadius: 7, border: 'none',
+                          background: 'transparent', color: '#DC2626', cursor: 'pointer',
+                          fontSize: 12, fontWeight: 500,
+                        }}
+                      >
+                        Убрать
+                      </button>
+                    )}
+                    <p style={{ margin: '6px 0 0', fontSize: 11.5, color: '#9CA3AF' }}>
+                      Отображается вместо «KAZSKILLS» в шапке на поддомене этой организации. Макс. 2 МБ.
+                    </p>
+                  </div>
+                </div>
               </div>
 
               {error && (

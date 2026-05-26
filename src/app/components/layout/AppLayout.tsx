@@ -4,35 +4,61 @@ import { LanguageSwitcher } from '../shared/LanguageSwitcher';
 import { useAuth } from '../../context/AuthContext';
 import { IcBook, IcFileText, IcBell, IcCamera, IcLogout } from '../Icons';
 import { useLanguage } from '../../context/LanguageContext';
-import { getOrganizationName } from '../../lib/organization';
+import { getOrganizationName, getCurrentOrganization, useOrganizations } from '../../lib/organization';
 
-// Logo component
-const Logo = () => (
-  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
-    <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
-      <rect width="36" height="36" rx="8" fill="url(#grad)"/>
-      <path d="M18 10L26 14V22L18 26L10 22V14L18 10Z" fill="#fff" opacity="0.9"/>
-      <path d="M18 18L26 14" stroke="#1B3D84" strokeWidth="1.8" strokeLinecap="round"/>
-      <path d="M18 18L10 14" stroke="#1B3D84" strokeWidth="1.8" strokeLinecap="round"/>
-      <path d="M18 18V26" stroke="#1B3D84" strokeWidth="1.8" strokeLinecap="round"/>
-      <circle cx="18" cy="18" r="2" fill="#1B3D84"/>
-      <defs>
-        <linearGradient id="grad" x1="0" y1="0" x2="36" y2="36" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#2B5CE6"/>
-          <stop offset="1" stopColor="#1B3D84"/>
-        </linearGradient>
-      </defs>
-    </svg>
-    <div>
-      <div style={{ fontSize: '16px', fontWeight: 700, color: '#1B3D84', lineHeight: 1, letterSpacing: '0.5px' }}>
-        KAZSKILLS
+// Logo component — uses the tenant org logo on subdomains, KAZSKILLS on the root.
+const Logo = () => {
+  // Subscribe to the registry so the header updates as soon as the admin
+  // uploads or changes a logo (no F5 needed).
+  useOrganizations();
+  const org = getCurrentOrganization();
+
+  if (org?.logoUrl) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+        <img
+          src={org.logoUrl} alt={org.displayName}
+          style={{ height: 40, maxWidth: 140, objectFit: 'contain' }}
+        />
+        <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          <div style={{ fontSize: '14px', fontWeight: 700, color: '#1B3D84', lineHeight: 1.1, letterSpacing: '0.3px' }}>
+            {org.displayName}
+          </div>
+          <div style={{ fontSize: '10px', color: '#6B7280', lineHeight: 1.4, letterSpacing: '0.3px' }}>
+            ОБУЧАЮЩАЯ ПЛАТФОРМА
+          </div>
+        </div>
       </div>
-      <div style={{ fontSize: '10px', color: '#6B7280', lineHeight: 1.4, letterSpacing: '0.3px' }}>
-        ОБУЧАЮЩАЯ ПЛАТФОРМА
+    );
+  }
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+      <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
+        <rect width="36" height="36" rx="8" fill="url(#grad)"/>
+        <path d="M18 10L26 14V22L18 26L10 22V14L18 10Z" fill="#fff" opacity="0.9"/>
+        <path d="M18 18L26 14" stroke="#1B3D84" strokeWidth="1.8" strokeLinecap="round"/>
+        <path d="M18 18L10 14" stroke="#1B3D84" strokeWidth="1.8" strokeLinecap="round"/>
+        <path d="M18 18V26" stroke="#1B3D84" strokeWidth="1.8" strokeLinecap="round"/>
+        <circle cx="18" cy="18" r="2" fill="#1B3D84"/>
+        <defs>
+          <linearGradient id="grad" x1="0" y1="0" x2="36" y2="36" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#2B5CE6"/>
+            <stop offset="1" stopColor="#1B3D84"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <div>
+        <div style={{ fontSize: '16px', fontWeight: 700, color: '#1B3D84', lineHeight: 1, letterSpacing: '0.5px' }}>
+          {org?.displayName?.toUpperCase() ?? 'KAZSKILLS'}
+        </div>
+        <div style={{ fontSize: '10px', color: '#6B7280', lineHeight: 1.4, letterSpacing: '0.3px' }}>
+          ОБУЧАЮЩАЯ ПЛАТФОРМА
+        </div>
       </div>
     </div>
-  </div>
-);
+  );
+};
 
 export function AppLayout() {
   const { user, logout } = useAuth();

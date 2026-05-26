@@ -4,6 +4,7 @@ export interface Organization {
   slug: string;
   displayName: string;
   fullName: string;
+  logoUrl?: string;
   legacyAliases?: string[];
   createdAt?: string;
 }
