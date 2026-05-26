@@ -342,7 +342,7 @@ export function AppLayout() {
                           const wasAdmin = user?.role === 'admin';
                           setShowProfileMenu(false);
                           logout();
-                          navigate(wasAdmin ? '/admin/login' : '/login');
+                          navigate(wasAdmin ? '/internal-access' : '/login');
                         }}
                         style={{
                           width: '100%',
@@ -397,7 +397,7 @@ export function StudentGuard() {
 
 export function AdminGuard() {
   const { user } = useAuth();
-  if (!user) return <Navigate to="/admin/login" replace />;
+  if (!user) return <Navigate to="/internal-access" replace />;
   if (user.role !== 'admin') return <Navigate to="/student/dashboard" replace />;
   return <Outlet />;
 }

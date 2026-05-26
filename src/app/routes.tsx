@@ -21,14 +21,21 @@ export const router = createBrowserRouter([
     path: '/login',
     element: <LoginPage mode="student" />,
   },
+  // Hidden admin entrance — obscure URL so it isn't surfaced to end users.
+  // Keep this list of "admin entry" paths in sync with AdminGuard's redirect target below.
   {
-    path: '/admin/login',
+    path: '/internal-access',
     element: <LoginPage mode="admin" />,
   },
+  // Legacy admin URLs — quietly redirect to the public student login so we
+  // don't advertise an "admin login" page exists.
   {
-    // /admin without a sub-path → admin login (so the URL the client gave clients still works)
+    path: '/admin/login',
+    element: <Navigate to="/login" replace />,
+  },
+  {
     path: '/admin',
-    element: <Navigate to="/admin/login" replace />,
+    element: <Navigate to="/login" replace />,
   },
   {
     path: '/',

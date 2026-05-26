@@ -35,11 +35,10 @@ export default function LoginPage({ mode }: LoginPageProps) {
     setLoading(false);
     if (result.ok) {
       if (result.role !== mode) {
-        // Wrong portal — drop the session and warn.
+        // Wrong portal — drop the session and show a generic error so we don't
+        // leak the existence of a separate admin URL on the student page.
         logout();
-        setError(mode === 'admin'
-          ? 'Это страница для администраторов. Слушатели входят на странице /login.'
-          : 'Это страница для слушателей. Администраторы входят на странице /admin/login.');
+        setError(t('auth.error'));
         return;
       }
       navigate(mode === 'admin' ? '/admin/dashboard' : '/student/courses');
@@ -255,33 +254,35 @@ export default function LoginPage({ mode }: LoginPageProps) {
           </button>
         </form>
 
-        {/* Cross-link to the other portal */}
-        <div style={{ marginTop: '18px', paddingTop: '16px', borderTop: '1px solid #EEF1F8', textAlign: 'center' }}>
-          <p style={{ margin: '0 0 8px', fontSize: '11.5px', color: '#9CA3AF' }}>
-            {mode === 'admin' ? 'Вы слушатель?' : 'Вы администратор?'}
-          </p>
-          <button
-            type="button"
-            onClick={() => navigate(mode === 'admin' ? '/login' : '/admin/login')}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: '6px',
-              padding: '7px 14px', borderRadius: '999px',
-              background: '#F4F6FB', border: '1.5px solid #E3E7F0',
-              color: NAVY, fontSize: '12px', fontWeight: 600, cursor: 'pointer',
-              transition: 'all 0.15s',
-            }}
-            onMouseEnter={e => {
-              (e.currentTarget as HTMLButtonElement).style.background = '#EBF1FE';
-              (e.currentTarget as HTMLButtonElement).style.borderColor = BLUE;
-            }}
-            onMouseLeave={e => {
-              (e.currentTarget as HTMLButtonElement).style.background = '#F4F6FB';
-              (e.currentTarget as HTMLButtonElement).style.borderColor = '#E3E7F0';
-            }}
-          >
-            {mode === 'admin' ? '← Перейти на страницу слушателя' : 'Перейти на страницу администратора →'}
-          </button>
-        </div>
+        {/* Cross-link is shown ONLY on the admin portal — in case an admin opens
+            it by mistake on the wrong machine and needs to bail out to the
+            public student login. The student page intentionally does NOT
+            advertise an admin entrance. */}
+        {mode === 'admin' && (
+          <div style={{ marginTop: '18px', paddingTop: '16px', borderTop: '1px solid #EEF1F8', textAlign: 'center' }}>
+            <button
+              type="button"
+              onClick={() => navigate('/login')}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: '6px',
+                padding: '7px 14px', borderRadius: '999px',
+                background: '#F4F6FB', border: '1.5px solid #E3E7F0',
+                color: NAVY, fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+                transition: 'all 0.15s',
+              }}
+              onMouseEnter={e => {
+                (e.currentTarget as HTMLButtonElement).style.background = '#EBF1FE';
+                (e.currentTarget as HTMLButtonElement).style.borderColor = BLUE;
+              }}
+              onMouseLeave={e => {
+                (e.currentTarget as HTMLButtonElement).style.background = '#F4F6FB';
+                (e.currentTarget as HTMLButtonElement).style.borderColor = '#E3E7F0';
+              }}
+            >
+              ← Перейти на страницу слушателя
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Footer */}
