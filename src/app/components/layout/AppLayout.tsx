@@ -370,7 +370,7 @@ export function StudentGuard() {
 
 export function AdminGuard() {
   const { user } = useAuth();
-  if (!user) return <Navigate to="/login" replace />;
+  if (!user) return <Navigate to="/admin/login" replace />;
   if (user.role !== 'admin') return <Navigate to="/student/dashboard" replace />;
   return <Outlet />;
 }

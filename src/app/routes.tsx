@@ -19,7 +19,11 @@ import AdminAnalyticsPage from './pages/admin/AdminAnalyticsPage';
 export const router = createBrowserRouter([
   {
     path: '/login',
-    element: <LoginPage />,
+    element: <LoginPage mode="student" />,
+  },
+  {
+    path: '/admin/login',
+    element: <LoginPage mode="admin" />,
   },
   {
     path: '/',

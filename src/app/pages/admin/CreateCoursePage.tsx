@@ -609,6 +609,12 @@ export default function CreateCoursePage() {
                           >
                             {q.correctAnswer === opt.text && opt.text && <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#fff' }} />}
                           </button>
+                          <span style={{
+                            minWidth: 20, fontSize: 13, fontWeight: 700,
+                            color: '#6B7280', textAlign: 'center',
+                          }}>
+                            {oi + 1}.
+                          </span>
                           <input
                             type="text" value={opt.text}
                             onChange={e => updOpt(q.id, opt.id, e.target.value)}
@@ -726,7 +732,13 @@ export default function CreateCoursePage() {
                 {t('admin.max_attempts')}
               </label>
               <div style={{ display: 'flex', gap: 8 }}>
-                {[1, 2, 3, 5].map(n => (
+                {[
+                  { n: 1, label: '1' },
+                  { n: 2, label: '2' },
+                  { n: 3, label: '3' },
+                  { n: 5, label: '5' },
+                  { n: 0, label: '∞' },
+                ].map(({ n, label }) => (
                   <button
                     key={n} onClick={() => setMaxAttempts(n)}
                     style={{
@@ -737,10 +749,13 @@ export default function CreateCoursePage() {
                       cursor: 'pointer', fontSize: '14px', fontWeight: 700,
                     }}
                   >
-                    {n}
+                    {label}
                   </button>
                 ))}
               </div>
+              <p style={{ margin: '6px 0 0', fontSize: '11.5px', color: '#9CA3AF' }}>
+                {maxAttempts === 0 ? 'Неограниченное число попыток' : `Максимум ${maxAttempts} ${maxAttempts === 1 ? 'попытка' : maxAttempts < 5 ? 'попытки' : 'попыток'}`}
+              </p>
             </div>
             <div>
               <label style={{ display: 'block', marginBottom: 8, color: '#374151', fontSize: '13px', fontWeight: 500 }}>Публикация</label>
@@ -773,7 +788,7 @@ export default function CreateCoursePage() {
                 { label: 'Вопросов',       value: questions.length },
                 { label: 'Проходной балл', value: `${passingScore}%` },
                 { label: 'Время теста',    value: `${timeLimit} мин` },
-                { label: 'Попыток',        value: maxAttempts },
+                { label: 'Попыток',        value: maxAttempts === 0 ? '∞ (без ограничений)' : maxAttempts },
                 { label: 'Статус',         value: published ? '✅ Опубликован' : '📝 Черновик' },
               ].map(({ label, value }) => (
                 <div key={label} style={{ display: 'flex', justifyContent: 'space-between', padding: '5px 0', borderBottom: `1px solid #F0F3FA` }}>

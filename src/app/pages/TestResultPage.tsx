@@ -170,7 +170,7 @@ export function TestResultPage() {
             Вернуться к курсам
           </Button>
 
-          {!passed && course && course.attempts < course.maxAttempts && (
+          {!passed && course && (course.maxAttempts === 0 || course.attempts < course.maxAttempts) && (
             <Button
               onClick={() => navigate(`/test/${courseId}`)}
               variant="primary"

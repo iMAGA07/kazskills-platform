@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { useUsers, type ManagedUser, type BatchUserInput } from '../../context/UsersContext';
 import { useCourses, UserProgress } from '../../context/CoursesContext';
@@ -271,7 +271,12 @@ async function exportBatchCredentials(
   requestNumber: string,
   org: string,
   createdUsers: { name: string; login: string; password: string }[],
+  tenantSlug?: string | null,
 ) {
+  const siteUrl = tenantSlug
+    ? `https://${tenantSlug}.kazskills.kz`
+    : 'https://kazskills.kz';
+
   const children: (Paragraph | Table)[] = [
     new Paragraph({
       heading: HeadingLevel.HEADING_1,
@@ -289,6 +294,44 @@ async function exportBatchCredentials(
     new Paragraph({
       spacing: { after: 400 },
       children: [new TextRun({ text: `Дата формирования: ${todayStr()}`, size: 20, color: '666666' })],
+    }),
+
+    // ── Instruction section ────────────────────────────────────────────────
+    new Paragraph({
+      heading: HeadingLevel.HEADING_2,
+      spacing: { before: 200, after: 120 },
+      children: [new TextRun({ text: 'Краткая инструкция по входу', bold: true, size: 26 })],
+    }),
+    new Paragraph({
+      spacing: { after: 100 },
+      children: [
+        new TextRun({ text: '1. Откройте в браузере ссылку: ', size: 22 }),
+        new TextRun({ text: siteUrl, size: 22, bold: true, color: '1B3D84' }),
+      ],
+    }),
+    new Paragraph({
+      spacing: { after: 100 },
+      children: [new TextRun({ text: '2. На странице входа выберите роль «Слушатель».', size: 22 })],
+    }),
+    new Paragraph({
+      spacing: { after: 100 },
+      children: [new TextRun({ text: '3. Введите логин и пароль из таблицы ниже (поля Email и Пароль).', size: 22 })],
+    }),
+    new Paragraph({
+      spacing: { after: 100 },
+      children: [new TextRun({ text: '4. Нажмите кнопку «Войти».', size: 22 })],
+    }),
+    new Paragraph({
+      spacing: { after: 100 },
+      children: [new TextRun({ text: '5. В разделе «Курсы» выберите назначенный вам курс, изучите материалы и пройдите итоговый тест.', size: 22 })],
+    }),
+    new Paragraph({
+      spacing: { after: 100 },
+      children: [new TextRun({ text: '6. После успешной сдачи теста сертификат появится в разделе «Сертификаты».', size: 22 })],
+    }),
+    new Paragraph({
+      spacing: { after: 300 },
+      children: [new TextRun({ text: 'По любым вопросам обращайтесь к администратору вашей организации.', size: 20, italics: true, color: '6B7280' })],
     }),
   ];
 
@@ -484,6 +527,7 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
         login: emp.login,
         password: emp.password,
       })),
+      tenantOrg?.slug ?? null,
     );
   };
 
@@ -1317,6 +1361,480 @@ function ReportModal({ open, onClose }: { open: boolean; onClose: () => void }) 
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// RequestArchiveModal — list & edit prior заявки
+// ═══════════════════════════════════════════════════════════════════════════════
+interface RequestSummary {
+  requestNumber: string;
+  organization: string;
+  department: string;
+  createdAt: string;
+  members: ManagedUser[];
+}
+
+function summarizeRequests(users: ManagedUser[]): RequestSummary[] {
+  const map = new Map<string, RequestSummary>();
+  for (const u of users) {
+    if (!u.requestNumber) continue;
+    const existing = map.get(u.requestNumber);
+    if (existing) {
+      existing.members.push(u);
+    } else {
+      map.set(u.requestNumber, {
+        requestNumber: u.requestNumber,
+        organization: u.organization,
+        department: u.department ?? '',
+        createdAt: u.createdAt,
+        members: [u],
+      });
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+}
+
+function RequestArchiveModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { users, updateUser, deleteUser, addUsersBatch } = useUsers();
+  const { courses } = useCourses();
+  const publishedCourses = courses.filter(c => c.published);
+  const tenantOrg = getCurrentOrganization();
+
+  const requests = useMemo(() => summarizeRequests(users), [users]);
+
+  // Selected request for editing
+  const [editingReq, setEditingReq] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+
+  const filtered = requests.filter(r => {
+    const q = search.trim().toLowerCase();
+    if (!q) return true;
+    return r.requestNumber.toLowerCase().includes(q)
+      || r.organization.toLowerCase().includes(q)
+      || r.department.toLowerCase().includes(q);
+  });
+
+  if (!open) return null;
+
+  // ── Editing view ──
+  if (editingReq) {
+    const req = requests.find(r => r.requestNumber === editingReq);
+    if (!req) {
+      setEditingReq(null);
+      return null;
+    }
+    return (
+      <RequestEditView
+        request={req}
+        publishedCourses={publishedCourses}
+        onClose={() => setEditingReq(null)}
+        onUpdateUser={updateUser}
+        onDeleteUser={deleteUser}
+        onAddUsers={(batch) => addUsersBatch(batch, req.organization, req.department, req.requestNumber)}
+      />
+    );
+  }
+
+  // ── List view ──
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(15,22,41,0.5)', zIndex: 1000,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: '#fff', borderRadius: 16, width: '92%', maxWidth: 880, maxHeight: '88vh',
+        display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+      }}>
+        {/* Header */}
+        <div style={{ padding: '20px 24px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: '#EBF1FE', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <IcDocument size={20} color={BLUE} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <h2 style={{ margin: 0, fontSize: 16, color: '#0F1629' }}>Архив заявок</h2>
+            <p style={{ margin: '2px 0 0', fontSize: 12, color: MUTED }}>
+              {requests.length} {requests.length === 1 ? 'заявка' : requests.length < 5 ? 'заявки' : 'заявок'}
+              {tenantOrg ? ` · ${tenantOrg.displayName}` : ' · все организации'}
+            </p>
+          </div>
+          <button onClick={onClose} style={{
+            width: 32, height: 32, borderRadius: 8, border: `1px solid ${BORDER}`,
+            background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <IcClose size={15} color="#6B7280" />
+          </button>
+        </div>
+
+        {/* Search */}
+        <div style={{ padding: '14px 24px', borderBottom: `1px solid ${BORDER}` }}>
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Поиск по номеру заявки, организации, отделу…"
+            style={{
+              width: '100%', padding: '9px 12px', borderRadius: 8,
+              border: `1.5px solid ${BORDER}`, background: '#F8FAFD',
+              fontSize: 13.5, color: '#0F1629', outline: 'none', boxSizing: 'border-box',
+            }}
+          />
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '14px 24px 24px' }}>
+          {filtered.length === 0 ? (
+            <div style={{ textAlign: 'center', padding: '40px 0', color: MUTED, fontSize: 13.5 }}>
+              {requests.length === 0
+                ? 'Заявок пока нет. Создайте первую через «По заявке (пакетно)».'
+                : 'По запросу ничего не найдено.'}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {filtered.map(req => (
+                <div key={req.requestNumber} style={{
+                  display: 'flex', alignItems: 'center', gap: 14,
+                  padding: '14px 16px', borderRadius: 10,
+                  border: `1.5px solid ${BORDER}`, background: '#fff',
+                }}>
+                  <div style={{
+                    width: 44, height: 44, borderRadius: 9, background: '#F4F6FB',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 13, fontWeight: 700, color: NAVY, flexShrink: 0,
+                  }}>
+                    №{req.requestNumber}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: '#0F1629', marginBottom: 2 }}>
+                      {req.organization}
+                    </div>
+                    <div style={{ fontSize: 12, color: MUTED, display: 'flex', gap: 12 }}>
+                      <span>{req.department || '— без отдела —'}</span>
+                      <span>·</span>
+                      <span>{req.createdAt}</span>
+                      <span>·</span>
+                      <span>{req.members.length} {req.members.length === 1 ? 'сотрудник' : req.members.length < 5 ? 'сотрудника' : 'сотрудников'}</span>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      exportBatchCredentials(
+                        req.requestNumber, req.organization,
+                        req.members.map(m => ({ name: m.name, login: m.email, password: m.password })),
+                        tenantOrg?.slug ?? null,
+                      );
+                    }}
+                    style={{
+                      padding: '8px 12px', borderRadius: 8, border: `1.5px solid ${BORDER}`,
+                      background: '#fff', color: '#374151', cursor: 'pointer',
+                      fontSize: 12, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6,
+                    }}
+                    title="Скачать логины/пароли"
+                  >
+                    <IcDownload size={13} color="currentColor" /> .docx
+                  </button>
+                  <button
+                    onClick={() => setEditingReq(req.requestNumber)}
+                    style={{
+                      padding: '8px 14px', borderRadius: 8, border: 'none',
+                      background: BLUE, color: '#fff', cursor: 'pointer',
+                      fontSize: 12, fontWeight: 600,
+                    }}
+                  >
+                    Открыть
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// RequestEditView — edit employees of one заявка
+// ═══════════════════════════════════════════════════════════════════════════════
+function RequestEditView({
+  request, publishedCourses, onClose, onUpdateUser, onDeleteUser, onAddUsers,
+}: {
+  request: RequestSummary;
+  publishedCourses: { id: string; title: string }[];
+  onClose: () => void;
+  onUpdateUser: (id: string, updates: Partial<ManagedUser>) => void;
+  onDeleteUser: (id: string) => void;
+  onAddUsers: (batch: BatchUserInput[]) => ManagedUser[];
+}) {
+  // Working copy of members (so we batch updates on save)
+  const [members, setMembers] = useState(request.members.map(m => ({ ...m })));
+  const [newRows, setNewRows] = useState<EmployeeRow[]>([]);
+  const [toDelete, setToDelete] = useState<Set<string>>(new Set());
+  const [saved, setSaved] = useState(false);
+
+  const updMember = (id: string, field: keyof ManagedUser, value: any) => {
+    setMembers(prev => prev.map(m => m.id === id ? { ...m, [field]: value } : m));
+  };
+
+  const toggleCourse = (id: string, courseId: string) => {
+    setMembers(prev => prev.map(m => {
+      if (m.id !== id) return m;
+      const has = m.enrolledCourses.includes(courseId);
+      return { ...m, enrolledCourses: has ? m.enrolledCourses.filter(c => c !== courseId) : [...m.enrolledCourses, courseId] };
+    }));
+  };
+
+  const toggleDelete = (id: string) => {
+    setToDelete(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  };
+
+  const addNewRow = () => {
+    setNewRows(prev => [...prev, {
+      id: `new-${Date.now()}`, name: '', position: '',
+      login: genLogin6(), password: genPassword4(), courses: [],
+    }]);
+  };
+
+  const updNewRow = (id: string, field: keyof EmployeeRow, value: any) => {
+    setNewRows(prev => prev.map(r => r.id === id ? { ...r, [field]: value } : r));
+  };
+
+  const removeNewRow = (id: string) => {
+    setNewRows(prev => prev.filter(r => r.id !== id));
+  };
+
+  const toggleNewRowCourse = (id: string, courseId: string) => {
+    setNewRows(prev => prev.map(r => {
+      if (r.id !== id) return r;
+      const has = r.courses.includes(courseId);
+      return { ...r, courses: has ? r.courses.filter(c => c !== courseId) : [...r.courses, courseId] };
+    }));
+  };
+
+  const handleSave = () => {
+    // Apply edits
+    members.forEach(m => {
+      const orig = request.members.find(o => o.id === m.id);
+      if (!orig) return;
+      const changed: Partial<ManagedUser> = {};
+      if (m.name !== orig.name) changed.name = m.name;
+      if (m.position !== orig.position) changed.position = m.position;
+      if (m.email !== orig.email) changed.email = m.email;
+      if (m.password !== orig.password) changed.password = m.password;
+      if (JSON.stringify(m.enrolledCourses) !== JSON.stringify(orig.enrolledCourses)) changed.enrolledCourses = m.enrolledCourses;
+      if (Object.keys(changed).length > 0) onUpdateUser(m.id, changed);
+    });
+    // Delete marked
+    toDelete.forEach(id => onDeleteUser(id));
+    // Add new rows
+    const filteredNew = newRows.filter(r => r.name.trim());
+    if (filteredNew.length > 0) {
+      onAddUsers(filteredNew.map(r => ({
+        name: r.name, position: r.position, login: r.login, password: r.password,
+        enrolledCourses: r.courses,
+      })));
+    }
+    setSaved(true);
+    setTimeout(onClose, 900);
+  };
+
+  const editInp: React.CSSProperties = {
+    padding: '7px 9px', borderRadius: 6, border: `1.5px solid ${BORDER}`,
+    background: '#fff', fontSize: 12.5, outline: 'none', boxSizing: 'border-box',
+  };
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(15,22,41,0.5)', zIndex: 1001,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: '#fff', borderRadius: 16, width: '94%', maxWidth: 1100, maxHeight: '90vh',
+        display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+      }}>
+        {/* Header */}
+        <div style={{ padding: '18px 24px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button onClick={onClose} style={{
+            padding: '6px 10px', borderRadius: 6, border: `1px solid ${BORDER}`,
+            background: '#fff', cursor: 'pointer', fontSize: 12, color: MUTED,
+          }}>← Назад</button>
+          <div style={{ flex: 1 }}>
+            <h2 style={{ margin: 0, fontSize: 16, color: '#0F1629' }}>
+              Заявка №{request.requestNumber}
+            </h2>
+            <p style={{ margin: '2px 0 0', fontSize: 12, color: MUTED }}>
+              {request.organization} · {request.department || '— без отдела —'}
+            </p>
+          </div>
+          <button onClick={onClose} style={{
+            width: 32, height: 32, borderRadius: 8, border: `1px solid ${BORDER}`,
+            background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <IcClose size={15} color="#6B7280" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '14px 24px 20px' }}>
+          {saved ? (
+            <div style={{ textAlign: 'center', padding: '60px 0' }}>
+              <div style={{
+                width: 56, height: 56, borderRadius: '50%', background: '#ECFDF5',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px',
+              }}>
+                <IcCheckCircle size={28} color="#059669" />
+              </div>
+              <p style={{ fontSize: 15, fontWeight: 600, color: '#059669', margin: 0 }}>
+                Изменения сохранены
+              </p>
+            </div>
+          ) : (
+            <>
+              {/* Existing members */}
+              <div style={{ marginBottom: 18 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>
+                  Сотрудники в заявке ({members.length - toDelete.size})
+                </div>
+                {members.map((m, idx) => {
+                  const willDelete = toDelete.has(m.id);
+                  return (
+                    <div key={m.id} style={{
+                      padding: 12, borderRadius: 10, border: `1.5px solid ${willDelete ? '#FECACA' : BORDER}`,
+                      background: willDelete ? '#FEF2F2' : '#FAFBFE', marginBottom: 8,
+                      opacity: willDelete ? 0.5 : 1, transition: 'all 0.15s',
+                    }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '24px 2fr 1.5fr 1fr 1fr 36px', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: MUTED, textAlign: 'center' }}>{idx + 1}</span>
+                        <input
+                          value={m.name} onChange={e => updMember(m.id, 'name', e.target.value)}
+                          placeholder="ФИО" style={editInp} disabled={willDelete}
+                        />
+                        <input
+                          value={m.position ?? ''} onChange={e => updMember(m.id, 'position', e.target.value)}
+                          placeholder="Должность" style={editInp} disabled={willDelete}
+                        />
+                        <input
+                          value={m.email} onChange={e => updMember(m.id, 'email', e.target.value)}
+                          placeholder="Логин" style={editInp} disabled={willDelete}
+                        />
+                        <input
+                          value={m.password} onChange={e => updMember(m.id, 'password', e.target.value)}
+                          placeholder="Пароль" style={editInp} disabled={willDelete}
+                        />
+                        <button
+                          onClick={() => toggleDelete(m.id)}
+                          title={willDelete ? 'Отменить удаление' : 'Удалить'}
+                          style={{
+                            padding: 6, borderRadius: 6, border: 'none',
+                            background: willDelete ? '#FEE2E2' : 'transparent', cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          }}
+                        >
+                          <IcTrash size={14} color={willDelete ? '#DC2626' : '#9CA3AF'} />
+                        </button>
+                      </div>
+                      {/* Course chips */}
+                      {publishedCourses.length > 0 && !willDelete && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginLeft: 32 }}>
+                          {publishedCourses.map(c => {
+                            const on = m.enrolledCourses.includes(c.id);
+                            return (
+                              <button key={c.id} onClick={() => toggleCourse(m.id, c.id)} style={{
+                                padding: '4px 10px', borderRadius: 999, border: `1.5px solid ${on ? BLUE : BORDER}`,
+                                background: on ? '#EBF1FE' : '#fff', color: on ? BLUE : '#6B7280',
+                                fontSize: 11.5, fontWeight: on ? 600 : 500, cursor: 'pointer',
+                              }}>
+                                {on ? '✓ ' : ''}{c.title}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* New rows */}
+              {newRows.length > 0 && (
+                <div style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: '#059669', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>
+                    Новые сотрудники ({newRows.length})
+                  </div>
+                  {newRows.map((r, idx) => (
+                    <div key={r.id} style={{
+                      padding: 12, borderRadius: 10, border: `1.5px solid #BBF7D0`,
+                      background: '#F0FDF4', marginBottom: 8,
+                    }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '24px 2fr 1.5fr 1fr 1fr 36px', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#059669', textAlign: 'center' }}>+{idx + 1}</span>
+                        <input value={r.name} onChange={e => updNewRow(r.id, 'name', e.target.value)} placeholder="ФИО" style={editInp} />
+                        <input value={r.position} onChange={e => updNewRow(r.id, 'position', e.target.value)} placeholder="Должность" style={editInp} />
+                        <input value={r.login} onChange={e => updNewRow(r.id, 'login', e.target.value)} placeholder="Логин" style={editInp} />
+                        <input value={r.password} onChange={e => updNewRow(r.id, 'password', e.target.value)} placeholder="Пароль" style={editInp} />
+                        <button onClick={() => removeNewRow(r.id)} style={{
+                          padding: 6, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer',
+                        }}>
+                          <IcTrash size={14} color="#9CA3AF" />
+                        </button>
+                      </div>
+                      {publishedCourses.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginLeft: 32 }}>
+                          {publishedCourses.map(c => {
+                            const on = r.courses.includes(c.id);
+                            return (
+                              <button key={c.id} onClick={() => toggleNewRowCourse(r.id, c.id)} style={{
+                                padding: '4px 10px', borderRadius: 999, border: `1.5px solid ${on ? '#059669' : BORDER}`,
+                                background: on ? '#D1FAE5' : '#fff', color: on ? '#047857' : '#6B7280',
+                                fontSize: 11.5, fontWeight: on ? 600 : 500, cursor: 'pointer',
+                              }}>
+                                {on ? '✓ ' : ''}{c.title}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <button onClick={addNewRow} style={{
+                width: '100%', padding: 10, borderRadius: 8,
+                border: `1.5px dashed #BFDBFE`, background: '#F4F8FF',
+                color: BLUE, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+              }}>
+                <IcPlus size={14} color={BLUE} /> Добавить сотрудника в эту заявку
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Footer */}
+        {!saved && (
+          <div style={{ padding: '14px 24px', borderTop: `1px solid ${BORDER}`, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+            <button onClick={onClose} style={{
+              padding: '9px 20px', borderRadius: 9, border: `1.5px solid ${BORDER}`,
+              background: '#fff', color: '#374151', fontSize: 13.5, fontWeight: 500, cursor: 'pointer',
+            }}>
+              Отмена
+            </button>
+            <button onClick={handleSave} style={{
+              padding: '9px 22px', borderRadius: 9, border: 'none',
+              background: '#059669', color: '#fff', fontSize: 13.5, fontWeight: 600, cursor: 'pointer',
+              boxShadow: '0 2px 10px rgba(5,150,105,0.3)',
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}>
+              <IcCheck size={14} color="#fff" /> Сохранить изменения
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Main Dashboard Page
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function AdminDashboardPage() {
@@ -1326,6 +1844,7 @@ export default function AdminDashboardPage() {
 
   const [reportOpen, setReportOpen] = useState(false);
   const [batchOpen, setBatchOpen]   = useState(false);
+  const [archiveOpen, setArchiveOpen] = useState(false);
 
   const totalStudents = users.filter(u => u.role === 'student').length;
   const totalCourses  = courses.filter(c => c.published).length;
@@ -1364,8 +1883,8 @@ export default function AdminDashboardPage() {
         ))}
       </div>
 
-      {/* Main action cards — 3 cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 24 }}>
+      {/* Main action cards — 4 cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 24 }}>
         {[
           {
             icon: IcTeam,
@@ -1385,6 +1904,14 @@ export default function AdminDashboardPage() {
           },
           {
             icon: IcDocument,
+            title: 'Архив заявок',
+            desc: 'Открыть прошлые заявки, дополнить или удалить сотрудников, посмотреть назначенные курсы и пересохранить .docx.',
+            btn: 'Открыть архив',
+            btnIcon: IcDocument,
+            onClick: () => setArchiveOpen(true),
+          },
+          {
+            icon: IcDownload,
             title: 'Сформировать отчёт',
             desc: 'Три вида отчётов в формате Word: заявка, логины и пароли, статистика по курсам.',
             btn: 'Сформировать отчёт',
@@ -1451,6 +1978,7 @@ export default function AdminDashboardPage() {
 
       <ReportModal open={reportOpen} onClose={() => setReportOpen(false)} />
       <BatchCreateModal open={batchOpen} onClose={() => setBatchOpen(false)} />
+      <RequestArchiveModal open={archiveOpen} onClose={() => setArchiveOpen(false)} />
     </div>
   );
 }

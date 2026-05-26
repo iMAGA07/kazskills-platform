@@ -449,6 +449,12 @@ export default function TestPage() {
                       }}>
                         {selected && <div style={{ width: 8, height: 8, borderRadius: '50%', background: '#fff' }} />}
                       </div>
+                      <span style={{
+                        minWidth: 22, fontSize: 14, fontWeight: 700,
+                        color: selected ? '#1E40AF' : '#6B7280',
+                      }}>
+                        {i + 1}.
+                      </span>
                       <span style={{ fontSize: 14, color: selected ? '#1E40AF' : '#374151', fontWeight: selected ? 500 : 400 }}>
                         {optText}
                       </span>

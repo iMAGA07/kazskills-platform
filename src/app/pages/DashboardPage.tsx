@@ -130,7 +130,7 @@ export function DashboardPage() {
                     <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Попыток:</span>
                       <span className="font-semibold text-foreground">
-                        {course.attempts} / {course.maxAttempts}
+                        {course.attempts} / {course.maxAttempts === 0 ? '∞' : course.maxAttempts}
                       </span>
                     </div>
 

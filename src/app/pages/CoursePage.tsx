@@ -24,7 +24,7 @@ export function CoursePage() {
     );
   }
 
-  const canStartTest = course.attempts < course.maxAttempts;
+  const canStartTest = course.maxAttempts === 0 || course.attempts < course.maxAttempts;
 
   return (
     <Layout>
@@ -64,7 +64,7 @@ export function CoursePage() {
               <div>
                 <p className="text-sm text-muted-foreground mb-1">Попыток осталось</p>
                 <p className="text-2xl font-semibold text-foreground">
-                  {course.maxAttempts - course.attempts}
+                  {course.maxAttempts === 0 ? '∞' : course.maxAttempts - course.attempts}
                 </p>
               </div>
 

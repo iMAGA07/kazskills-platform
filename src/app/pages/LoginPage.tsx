@@ -10,16 +10,20 @@ import { getOrganizationName } from '../lib/organization';
 const NAVY = '#1B3D84';
 const BLUE = '#2B5CE6';
 
-export default function LoginPage() {
+interface LoginPageProps {
+  /** Which audience this login page is for. Wrong-role logins are rejected. */
+  mode: UserRole;
+}
+
+export default function LoginPage({ mode }: LoginPageProps) {
   const orgName = getOrganizationName();
   const [email,    setEmail]    = useState('');
   const [password, setPassword] = useState('');
   const [showPass, setShowPass] = useState(false);
-  const [role,     setRole]     = useState<UserRole>('student');
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState('');
 
-  const { login } = useAuth();
+  const { login, logout } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
 
@@ -30,7 +34,19 @@ export default function LoginPage() {
     const result = await login(email, password);
     setLoading(false);
     if (result.ok) {
-      navigate(role === 'admin' ? '/admin/dashboard' : '/student/courses');
+      // After login, the user record sits in context. We need to verify the role.
+      // Easiest path: peek at localStorage (which login() just wrote).
+      try {
+        const saved = JSON.parse(localStorage.getItem('kazskills_user') || 'null');
+        if (saved && saved.role !== mode) {
+          logout();
+          setError(mode === 'admin'
+            ? 'Это страница для администраторов. Слушатели входят на странице /login.'
+            : 'Это страница для слушателей. Администраторы входят на странице /admin/login.');
+          return;
+        }
+      } catch {}
+      navigate(mode === 'admin' ? '/admin/dashboard' : '/student/courses');
     } else if (result.reason === 'wrong_tenant') {
       setError(orgName
         ? `Эта учётная запись не относится к организации ${orgName}`
@@ -38,12 +54,6 @@ export default function LoginPage() {
     } else {
       setError(t('auth.error'));
     }
-  };
-
-  const fillDemo = () => {
-    if (role === 'admin') { setEmail('admin@kazskills.kz'); setPassword('Admin1234'); }
-    else { setEmail('serik@kazskills.kz'); setPassword('Student1234'); }
-    setError('');
   };
 
   const inp: React.CSSProperties = {
@@ -147,29 +157,17 @@ export default function LoginPage() {
           </div>
         </div>
 
-        {/* Role switcher */}
+        {/* Mode indicator (read-only) */}
         <div style={{
-          display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px',
-          background: '#F4F6FB', borderRadius: '10px', padding: '4px',
-          marginBottom: '24px',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
+          background: mode === 'admin' ? '#0F1629' : '#EBF1FE',
+          color: mode === 'admin' ? '#fff' : NAVY,
+          borderRadius: '10px', padding: '10px 14px',
+          marginBottom: '20px',
+          fontSize: '13px', fontWeight: 600,
         }}>
-          {(['student', 'admin'] as UserRole[]).map(r => (
-            <button
-              key={r}
-              type="button"
-              onClick={() => { setRole(r); setError(''); }}
-              style={{
-                padding: '9px 12px', borderRadius: '7px', border: 'none',
-                background: role === r ? NAVY : 'transparent',
-                color: role === r ? '#fff' : '#6B7280',
-                cursor: 'pointer', transition: 'all 0.15s',
-                fontSize: '13px', fontWeight: role === r ? 600 : 400,
-                boxShadow: role === r ? '0 1px 6px rgba(27,61,132,0.25)' : 'none',
-              }}
-            >
-              {r === 'student' ? 'Слушатель' : 'Администратор'}
-            </button>
-          ))}
+          {mode === 'admin' ? <IcShield size={14} color="#fff" /> : <IcMail size={14} color={NAVY} />}
+          {mode === 'admin' ? 'Вход для администраторов' : 'Вход для слушателей'}
         </div>
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
@@ -261,28 +259,19 @@ export default function LoginPage() {
           </button>
         </form>
 
-        {/* Demo */}
-        <button
-          type="button"
-          onClick={fillDemo}
-          style={{
-            marginTop: '14px', width: '100%', padding: '10px', borderRadius: '8px',
-            background: '#F4F6FB', border: '1.5px dashed #D1D5DB',
-            color: '#9CA3AF', fontSize: '12px', cursor: 'pointer', transition: 'all 0.15s',
-          }}
-          onMouseEnter={e => {
-            (e.currentTarget as HTMLButtonElement).style.borderColor = BLUE;
-            (e.currentTarget as HTMLButtonElement).style.color = BLUE;
-            (e.currentTarget as HTMLButtonElement).style.background = '#EBF1FE';
-          }}
-          onMouseLeave={e => {
-            (e.currentTarget as HTMLButtonElement).style.borderColor = '#D1D5DB';
-            (e.currentTarget as HTMLButtonElement).style.color = '#9CA3AF';
-            (e.currentTarget as HTMLButtonElement).style.background = '#F4F6FB';
-          }}
-        >
-          Demo — заполнить данные {role === 'admin' ? 'администратора' : 'слушателя'}
-        </button>
+        {/* Cross-link to the other portal */}
+        <div style={{ marginTop: '16px', textAlign: 'center' }}>
+          <button
+            type="button"
+            onClick={() => navigate(mode === 'admin' ? '/login' : '/admin/login')}
+            style={{
+              background: 'none', border: 'none', color: '#6B7280',
+              fontSize: '12px', cursor: 'pointer',
+            }}
+          >
+            {mode === 'admin' ? '← Вход для слушателей' : 'Вход для администраторов →'}
+          </button>
+        </div>
       </div>
 
       {/* Footer */}
