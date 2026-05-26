@@ -312,23 +312,19 @@ async function exportBatchCredentials(
     }),
     new Paragraph({
       spacing: { after: 100 },
-      children: [new TextRun({ text: '2. На странице входа выберите роль «Слушатель».', size: 22 })],
+      children: [new TextRun({ text: '2. Введите логин и пароль из таблицы ниже.', size: 22 })],
     }),
     new Paragraph({
       spacing: { after: 100 },
-      children: [new TextRun({ text: '3. Введите логин и пароль из таблицы ниже (поля Email и Пароль).', size: 22 })],
+      children: [new TextRun({ text: '3. Нажмите кнопку «Войти».', size: 22 })],
     }),
     new Paragraph({
       spacing: { after: 100 },
-      children: [new TextRun({ text: '4. Нажмите кнопку «Войти».', size: 22 })],
+      children: [new TextRun({ text: '4. В разделе «Мои курсы» выберите назначенный вам курс, изучите материалы и пройдите итоговый тест.', size: 22 })],
     }),
     new Paragraph({
       spacing: { after: 100 },
-      children: [new TextRun({ text: '5. В разделе «Курсы» выберите назначенный вам курс, изучите материалы и пройдите итоговый тест.', size: 22 })],
-    }),
-    new Paragraph({
-      spacing: { after: 100 },
-      children: [new TextRun({ text: '6. После успешной сдачи теста сертификат появится в разделе «Сертификаты».', size: 22 })],
+      children: [new TextRun({ text: '5. После успешной сдачи теста сертификат появится в разделе «Сертификаты».', size: 22 })],
     }),
     new Paragraph({
       spacing: { after: 300 },
