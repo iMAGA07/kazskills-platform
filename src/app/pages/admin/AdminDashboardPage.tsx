@@ -1611,8 +1611,9 @@ function RequestEditView({
   };
 
   const handleSave = () => {
-    // Apply edits
+    // Apply edits — but skip rows that are already marked for deletion (no point updating then deleting)
     members.forEach(m => {
+      if (toDelete.has(m.id)) return;
       const orig = request.members.find(o => o.id === m.id);
       if (!orig) return;
       const changed: Partial<ManagedUser> = {};

@@ -181,7 +181,9 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
     setAllCourses(prev => prev.filter(c => c.id !== id));
   }, []);
 
-  const getCourse = useCallback((id: string) => allCourses.find(c => c.id === id), [allCourses]);
+  // Tenant-scoped lookup: a student/admin on tenant X cannot pull a course from tenant Y by ID.
+  // On root domain `courses === allCourses`, so super-admin still sees everything.
+  const getCourse = useCallback((id: string) => courses.find(c => c.id === id), [courses]);
 
   // ── Progress API ──
   const getProgress = useCallback(async (userId: string, courseId: string): Promise<UserProgress> => {

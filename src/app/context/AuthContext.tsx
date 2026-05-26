@@ -7,7 +7,9 @@ const USERS_HEADERS = { 'Content-Type': 'application/json', Authorization: `Bear
 
 export type UserRole = 'admin' | 'student';
 
-export type LoginResult = { ok: true } | { ok: false; reason: 'invalid' | 'wrong_tenant' };
+export type LoginResult =
+  | { ok: true; role: UserRole }
+  | { ok: false; reason: 'invalid' | 'wrong_tenant' };
 
 export interface User {
   id: string;
@@ -85,7 +87,7 @@ const MOCK_USERS: (User & { password: string })[] = [
 
 const AuthContext = createContext<AuthContextType>({
   user: null,
-  login: async () => ({ ok: false, reason: 'invalid' }),
+  login: async () => ({ ok: false as const, reason: 'invalid' as const }),
   logout: () => {},
   updateUser: () => {},
 });
@@ -123,7 +125,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
       setUser(candidate);
       localStorage.setItem('kazskills_user', JSON.stringify(candidate));
-      return { ok: true };
+      return { ok: true, role: candidate.role };
     };
 
     const matchInList = (list: any[]) =>

@@ -313,9 +313,10 @@ export function AppLayout() {
 
                       <button
                         onClick={() => {
+                          const wasAdmin = user?.role === 'admin';
                           setShowProfileMenu(false);
                           logout();
-                          navigate('/login');
+                          navigate(wasAdmin ? '/admin/login' : '/login');
                         }}
                         style={{
                           width: '100%',

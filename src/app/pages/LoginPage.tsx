@@ -34,18 +34,14 @@ export default function LoginPage({ mode }: LoginPageProps) {
     const result = await login(email, password);
     setLoading(false);
     if (result.ok) {
-      // After login, the user record sits in context. We need to verify the role.
-      // Easiest path: peek at localStorage (which login() just wrote).
-      try {
-        const saved = JSON.parse(localStorage.getItem('kazskills_user') || 'null');
-        if (saved && saved.role !== mode) {
-          logout();
-          setError(mode === 'admin'
-            ? 'Это страница для администраторов. Слушатели входят на странице /login.'
-            : 'Это страница для слушателей. Администраторы входят на странице /admin/login.');
-          return;
-        }
-      } catch {}
+      if (result.role !== mode) {
+        // Wrong portal — drop the session and warn.
+        logout();
+        setError(mode === 'admin'
+          ? 'Это страница для администраторов. Слушатели входят на странице /login.'
+          : 'Это страница для слушателей. Администраторы входят на странице /admin/login.');
+        return;
+      }
       navigate(mode === 'admin' ? '/admin/dashboard' : '/student/courses');
     } else if (result.reason === 'wrong_tenant') {
       setError(orgName
@@ -260,16 +256,30 @@ export default function LoginPage({ mode }: LoginPageProps) {
         </form>
 
         {/* Cross-link to the other portal */}
-        <div style={{ marginTop: '16px', textAlign: 'center' }}>
+        <div style={{ marginTop: '18px', paddingTop: '16px', borderTop: '1px solid #EEF1F8', textAlign: 'center' }}>
+          <p style={{ margin: '0 0 8px', fontSize: '11.5px', color: '#9CA3AF' }}>
+            {mode === 'admin' ? 'Вы слушатель?' : 'Вы администратор?'}
+          </p>
           <button
             type="button"
             onClick={() => navigate(mode === 'admin' ? '/login' : '/admin/login')}
             style={{
-              background: 'none', border: 'none', color: '#6B7280',
-              fontSize: '12px', cursor: 'pointer',
+              display: 'inline-flex', alignItems: 'center', gap: '6px',
+              padding: '7px 14px', borderRadius: '999px',
+              background: '#F4F6FB', border: '1.5px solid #E3E7F0',
+              color: NAVY, fontSize: '12px', fontWeight: 600, cursor: 'pointer',
+              transition: 'all 0.15s',
+            }}
+            onMouseEnter={e => {
+              (e.currentTarget as HTMLButtonElement).style.background = '#EBF1FE';
+              (e.currentTarget as HTMLButtonElement).style.borderColor = BLUE;
+            }}
+            onMouseLeave={e => {
+              (e.currentTarget as HTMLButtonElement).style.background = '#F4F6FB';
+              (e.currentTarget as HTMLButtonElement).style.borderColor = '#E3E7F0';
             }}
           >
-            {mode === 'admin' ? '← Вход для слушателей' : 'Вход для администраторов →'}
+            {mode === 'admin' ? '← Перейти на страницу слушателя' : 'Перейти на страницу администратора →'}
           </button>
         </div>
       </div>

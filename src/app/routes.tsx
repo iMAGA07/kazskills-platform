@@ -26,6 +26,11 @@ export const router = createBrowserRouter([
     element: <LoginPage mode="admin" />,
   },
   {
+    // /admin without a sub-path → admin login (so the URL the client gave clients still works)
+    path: '/admin',
+    element: <Navigate to="/admin/login" replace />,
+  },
+  {
     path: '/',
     element: <AppLayout />,
     children: [
