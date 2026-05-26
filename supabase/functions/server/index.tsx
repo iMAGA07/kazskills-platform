@@ -430,8 +430,16 @@ app.post("/make-server-3ed1835c/auth/logout", async (c) => {
 
 // ─── USERS ────────────────────────────────────────────────────────────────────
 
-// GET /users — list all users (passwords stripped)
-// Auth required. Admin sees everyone; student sees only themselves.
+/** Admin endpoints can return passwords (admins manage credentials);
+ *  student endpoints must strip them. */
+function respondUser<T extends { password?: string }>(c: any, user: T) {
+  const sess = c.get("session") as Session | undefined;
+  return sess?.role === "admin" ? user : stripPassword(user);
+}
+
+// GET /users — list all users.
+// Admin sees everyone WITH passwords (needed for the Word reports and the
+// "edit user" form). Student sees only their own record, password stripped.
 app.get("/make-server-3ed1835c/users", requireAuth, async (c) => {
   try {
     const sess = c.get("session") as Session;
@@ -440,7 +448,7 @@ app.get("/make-server-3ed1835c/users", requireAuth, async (c) => {
       const self = users.find(u => u.id === sess.userId);
       return c.json(self ? [stripPassword(self)] : []);
     }
-    return c.json(users.map(stripPassword));
+    return c.json(users); // admin keeps passwords
   } catch (err) {
     console.log("Error listing users:", err);
     return c.json({ error: `Failed to list users: ${err}` }, 500);
@@ -453,7 +461,7 @@ app.post("/make-server-3ed1835c/users", requireAuth, requireAdmin, async (c) => 
     const body = await c.req.json();
     if (!body.id) return c.json({ error: "id is required" }, 400);
     await kv.set(`user:${body.id}`, body);
-    return c.json(stripPassword(body), 201);
+    return c.json(body, 201); // admin context — echo the password back
   } catch (err) {
     console.log("Error creating user:", err);
     return c.json({ error: `Failed to create user: ${err}` }, 500);
@@ -468,7 +476,7 @@ app.post("/make-server-3ed1835c/users/batch", requireAuth, requireAdmin, async (
     if (users.length === 0) return c.json([]);
     const keys = users.map(u => `user:${u.id}`);
     await kv.mset(keys, users);
-    return c.json(users.map(stripPassword), 201);
+    return c.json(users, 201); // admin echo
   } catch (err) {
     console.log("Error creating users batch:", err);
     return c.json({ error: `Failed to create users batch: ${err}` }, 500);
@@ -493,7 +501,7 @@ app.put("/make-server-3ed1835c/users/:id", requireAuth, async (c) => {
     }
     const updated = { ...existing, ...body, id };
     await kv.set(`user:${id}`, updated);
-    return c.json(stripPassword(updated as ServerUser));
+    return c.json(respondUser(c, updated as ServerUser));
   } catch (err) {
     console.log("Error updating user:", err);
     return c.json({ error: `Failed to update user: ${err}` }, 500);
