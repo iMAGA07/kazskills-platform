@@ -166,16 +166,22 @@ export default function LoginPage({ mode }: LoginPageProps) {
         </div>
 
         <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
-          {/* Email */}
+          {/* Login (email OR generated numeric login) */}
           <div>
             <label style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '7px', color: '#374151', fontSize: '12.5px', fontWeight: 500 }}>
               <IcMail size={13} color="#9CA3AF" />
-              {t('auth.email')}
+              Логин
             </label>
             <input
-              type="email" value={email}
+              // type="text" (not "email"): batch-created users get a 6-digit
+              // numeric login like 190408, the browser's HTML5 email-validator
+              // would otherwise block submit before our code sees it.
+              type="text"
+              autoComplete="username"
+              inputMode="text"
+              value={email}
               onChange={e => setEmail(e.target.value)}
-              placeholder="user@kazskills.kz"
+              placeholder="Email или 6-значный логин"
               required
               style={{ ...inp, borderColor: error ? '#DC2626' : '#E3E7F0' }}
               onFocus={e => { e.target.style.borderColor = BLUE; e.target.style.boxShadow = '0 0 0 3px rgba(43,92,230,0.1)'; }}
