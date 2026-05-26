@@ -532,6 +532,120 @@ app.post("/make-server-3ed1835c/users/seed", async (c) => {
   }
 });
 
+// ─── ORGANIZATIONS ────────────────────────────────────────────────────────────
+
+interface ServerOrganization {
+  slug: string;
+  displayName: string;
+  fullName: string;
+  legacyAliases?: string[];
+  createdAt?: string;
+}
+
+const SLUG_PATTERN = /^[a-z0-9](?:[a-z0-9-]{0,28}[a-z0-9])?$/; // 1-30 chars, lower, may contain dashes
+
+async function getAllOrganizations(): Promise<ServerOrganization[]> {
+  const list = await kv.getByPrefix("org:");
+  return (list as ServerOrganization[]).filter(o => o && o.slug);
+}
+
+// GET /organizations — open (login pages need to render the badge before auth)
+app.get("/make-server-3ed1835c/organizations", async (c) => {
+  try {
+    const orgs = await getAllOrganizations();
+    return c.json(orgs);
+  } catch (err) {
+    console.log("Error listing organizations:", err);
+    return c.json({ error: `Failed to list organizations: ${err}` }, 500);
+  }
+});
+
+// POST /organizations — admin only
+app.post("/make-server-3ed1835c/organizations", requireAuth, requireAdmin, async (c) => {
+  try {
+    const body = await c.req.json() as ServerOrganization;
+    const slug = (body.slug ?? "").trim().toLowerCase();
+    if (!SLUG_PATTERN.test(slug)) {
+      return c.json({ error: "Invalid slug. Use 1-30 lowercase letters, digits and dashes." }, 400);
+    }
+    if (slug === "www" || slug === "kazskills") {
+      return c.json({ error: "This slug is reserved." }, 400);
+    }
+    if (!body.displayName?.trim() || !body.fullName?.trim()) {
+      return c.json({ error: "displayName and fullName are required" }, 400);
+    }
+    const existing = await kv.get(`org:${slug}`);
+    if (existing) return c.json({ error: "Organization with this slug already exists" }, 409);
+
+    const org: ServerOrganization = {
+      slug,
+      displayName: body.displayName.trim(),
+      fullName: body.fullName.trim(),
+      legacyAliases: Array.isArray(body.legacyAliases) ? body.legacyAliases : [],
+      createdAt: new Date().toISOString(),
+    };
+    await kv.set(`org:${slug}`, org);
+    return c.json(org, 201);
+  } catch (err) {
+    console.log("Error creating organization:", err);
+    return c.json({ error: `Failed to create organization: ${err}` }, 500);
+  }
+});
+
+// PUT /organizations/:slug — admin only (slug itself cannot be changed)
+app.put("/make-server-3ed1835c/organizations/:slug", requireAuth, requireAdmin, async (c) => {
+  try {
+    const slug = c.req.param("slug");
+    const existing = (await kv.get(`org:${slug}`)) as ServerOrganization | null;
+    if (!existing) return c.json({ error: "Organization not found" }, 404);
+
+    const body = await c.req.json();
+    const updated: ServerOrganization = {
+      ...existing,
+      displayName: body.displayName?.trim() || existing.displayName,
+      fullName: body.fullName?.trim() || existing.fullName,
+      legacyAliases: Array.isArray(body.legacyAliases) ? body.legacyAliases : existing.legacyAliases,
+      slug, // immutable
+    };
+    await kv.set(`org:${slug}`, updated);
+    return c.json(updated);
+  } catch (err) {
+    console.log("Error updating organization:", err);
+    return c.json({ error: `Failed to update organization: ${err}` }, 500);
+  }
+});
+
+// DELETE /organizations/:slug — admin only
+app.delete("/make-server-3ed1835c/organizations/:slug", requireAuth, requireAdmin, async (c) => {
+  try {
+    const slug = c.req.param("slug");
+    await kv.del(`org:${slug}`);
+    return c.json({ success: true });
+  } catch (err) {
+    console.log("Error deleting organization:", err);
+    return c.json({ error: `Failed to delete organization: ${err}` }, 500);
+  }
+});
+
+// POST /organizations/seed — idempotent bootstrap (only if empty)
+app.post("/make-server-3ed1835c/organizations/seed", async (c) => {
+  try {
+    const existing = await getAllOrganizations();
+    if (existing.length > 0) {
+      return c.json({ seeded: false, count: existing.length, reason: "already-seeded" });
+    }
+    const body = await c.req.json();
+    const orgs: ServerOrganization[] = Array.isArray(body) ? body : body.organizations ?? [];
+    if (orgs.length === 0) return c.json({ seeded: false, count: 0, reason: "no-organizations" });
+    const keys = orgs.map(o => `org:${o.slug}`);
+    await kv.mset(keys, orgs);
+    return c.json({ seeded: true, count: orgs.length });
+  } catch (err) {
+    console.log("Error in /organizations/seed:", err);
+    return c.json({ error: `Failed to seed organizations: ${err}` }, 500);
+  }
+});
+
 // ─── ANALYTICS ────────────────────────────────────────────────────────────────
 
 // GET /analytics — summary stats (admin only)

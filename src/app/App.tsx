@@ -5,19 +5,22 @@ import { AuthProvider } from './context/AuthContext';
 import { LanguageProvider } from './context/LanguageContext';
 import { UsersProvider } from './context/UsersContext';
 import { CoursesProvider } from './context/CoursesContext';
+import { OrganizationsProvider } from './context/OrganizationsContext';
 import { ToastHost } from './components/shared/Toast';
 
 export default function App() {
   return (
     <AuthProvider>
-      <UsersProvider>
-        <LanguageProvider>
-          <CoursesProvider>
-            <RouterProvider router={router} />
-            <ToastHost />
-          </CoursesProvider>
-        </LanguageProvider>
-      </UsersProvider>
+      <OrganizationsProvider>
+        <UsersProvider>
+          <LanguageProvider>
+            <CoursesProvider>
+              <RouterProvider router={router} />
+              <ToastHost />
+            </CoursesProvider>
+          </LanguageProvider>
+        </UsersProvider>
+      </OrganizationsProvider>
     </AuthProvider>
   );
 }

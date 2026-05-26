@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import { useUsers, type ManagedUser, type BatchUserInput } from '../../context/UsersContext';
 import { useCourses, UserProgress } from '../../context/CoursesContext';
 import { getCurrentOrganization } from '../../lib/organization';
+import { useOrganizationsContext } from '../../context/OrganizationsContext';
 import {
   IcUserPlus, IcPlus, IcClose, IcChevronDown, IcTeam,
   IcBook, IcDocument, IcCheck, IcDownload, IcTrash,
@@ -1836,16 +1837,367 @@ function RequestEditView({
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// OrganizationsModal — manage tenant organizations (subdomains)
+// ═══════════════════════════════════════════════════════════════════════════════
+const SLUG_RX = /^[a-z0-9](?:[a-z0-9-]{0,28}[a-z0-9])?$/;
+
+function OrganizationsModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+  const { organizations, createOrganization, updateOrganization, deleteOrganization } = useOrganizationsContext();
+
+  const [mode, setMode] = useState<'list' | 'create' | { edit: string }>('list');
+  const [form, setForm] = useState({ slug: '', displayName: '', fullName: '' });
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!open) {
+      setMode('list');
+      setForm({ slug: '', displayName: '', fullName: '' });
+      setError('');
+      setConfirmDelete(null);
+    }
+  }, [open]);
+
+  // When entering edit mode, prefill the form.
+  useEffect(() => {
+    if (typeof mode === 'object' && 'edit' in mode) {
+      const o = organizations.find(x => x.slug === mode.edit);
+      if (o) setForm({ slug: o.slug, displayName: o.displayName, fullName: o.fullName });
+    } else if (mode === 'create') {
+      setForm({ slug: '', displayName: '', fullName: '' });
+    }
+    setError('');
+  }, [mode]);
+
+  if (!open) return null;
+
+  const handleSave = async () => {
+    setError('');
+    const slug = form.slug.trim().toLowerCase();
+    const displayName = form.displayName.trim();
+    const fullName = form.fullName.trim();
+
+    if (mode === 'create') {
+      if (!SLUG_RX.test(slug)) {
+        setError('Поддомен должен содержать только латиницу нижнего регистра, цифры и дефисы (1–30 символов).');
+        return;
+      }
+      if (slug === 'www' || slug === 'kazskills') {
+        setError('Этот поддомен зарезервирован.');
+        return;
+      }
+      if (organizations.some(o => o.slug === slug)) {
+        setError('Поддомен уже занят.');
+        return;
+      }
+    }
+    if (!displayName) { setError('Введите короткое название.'); return; }
+    if (!fullName)    { setError('Введите полное название.'); return; }
+
+    setBusy(true);
+    try {
+      if (mode === 'create') {
+        await createOrganization({ slug, displayName, fullName });
+      } else if (typeof mode === 'object') {
+        await updateOrganization(mode.edit, { displayName, fullName });
+      }
+      setMode('list');
+    } catch (e: any) {
+      setError(e?.message ?? 'Не удалось сохранить.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDelete = async (slug: string) => {
+    setBusy(true);
+    try {
+      await deleteOrganization(slug);
+      setConfirmDelete(null);
+    } catch (e: any) {
+      setError(e?.message ?? 'Не удалось удалить.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{
+      position: 'fixed', inset: 0, background: 'rgba(15,22,41,0.5)', zIndex: 1000,
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: '#fff', borderRadius: 16, width: '92%', maxWidth: 720, maxHeight: '88vh',
+        display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
+      }}>
+        {/* Header */}
+        <div style={{ padding: '20px 24px', borderBottom: `1px solid ${BORDER}`, display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: '#EBF1FE', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <IcBuilding size={20} color={BLUE} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <h2 style={{ margin: 0, fontSize: 16, color: '#0F1629' }}>
+              {mode === 'list' && 'Организации'}
+              {mode === 'create' && 'Новая организация'}
+              {typeof mode === 'object' && 'Редактировать организацию'}
+            </h2>
+            <p style={{ margin: '2px 0 0', fontSize: 12, color: MUTED }}>
+              {mode === 'list'
+                ? `Каждая получает свой поддомен вида slug.kazskills.kz`
+                : 'У каждой свой поддомен и изолированная админка'}
+            </p>
+          </div>
+          {mode !== 'list' && (
+            <button onClick={() => setMode('list')} style={{
+              padding: '6px 12px', borderRadius: 7, border: `1px solid ${BORDER}`,
+              background: '#fff', cursor: 'pointer', fontSize: 12, color: MUTED,
+            }}>← Назад</button>
+          )}
+          <button onClick={onClose} style={{
+            width: 32, height: 32, borderRadius: 8, border: `1px solid ${BORDER}`,
+            background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <IcClose size={15} color="#6B7280" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '14px 24px 20px' }}>
+          {mode === 'list' && (
+            <>
+              {organizations.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px 0', color: MUTED, fontSize: 13.5 }}>
+                  Организаций пока нет.
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+                  {organizations.map(o => (
+                    <div key={o.slug} style={{
+                      padding: '12px 14px', borderRadius: 10,
+                      border: `1.5px solid ${BORDER}`, background: '#FAFBFE',
+                    }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                        <div style={{
+                          width: 38, height: 38, borderRadius: 9, background: '#EBF1FE',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          fontSize: 13, fontWeight: 700, color: NAVY,
+                        }}>
+                          {o.displayName.slice(0, 2).toUpperCase()}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 600, color: '#0F1629' }}>
+                            {o.displayName}
+                          </div>
+                          <div style={{ fontSize: 12, color: MUTED, marginTop: 1 }}>
+                            {o.fullName}
+                          </div>
+                          <a
+                            href={`https://${o.slug}.kazskills.kz`}
+                            target="_blank" rel="noreferrer"
+                            style={{
+                              display: 'inline-flex', alignItems: 'center', gap: 4,
+                              fontSize: 11.5, color: BLUE, marginTop: 4, textDecoration: 'none',
+                              fontWeight: 500,
+                            }}
+                          >
+                            {o.slug}.kazskills.kz ↗
+                          </a>
+                        </div>
+                        {confirmDelete === o.slug ? (
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button onClick={() => setConfirmDelete(null)} style={{
+                              padding: '7px 10px', borderRadius: 7, border: `1px solid ${BORDER}`,
+                              background: '#fff', cursor: 'pointer', fontSize: 12, color: '#374151',
+                            }}>Отмена</button>
+                            <button
+                              onClick={() => handleDelete(o.slug)}
+                              disabled={busy}
+                              style={{
+                                padding: '7px 12px', borderRadius: 7, border: 'none',
+                                background: '#DC2626', color: '#fff', cursor: 'pointer',
+                                fontSize: 12, fontWeight: 600,
+                              }}
+                            >Удалить</button>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button onClick={() => setMode({ edit: o.slug })} style={{
+                              padding: '7px 12px', borderRadius: 7, border: `1px solid ${BORDER}`,
+                              background: '#fff', cursor: 'pointer', fontSize: 12, color: '#374151',
+                            }}>Изменить</button>
+                            <button
+                              onClick={() => setConfirmDelete(o.slug)}
+                              title="Удалить"
+                              style={{
+                                padding: 8, borderRadius: 7, border: `1px solid ${BORDER}`,
+                                background: '#fff', cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                              }}
+                            >
+                              <IcTrash size={13} color="#9CA3AF" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <button
+                onClick={() => setMode('create')}
+                style={{
+                  width: '100%', padding: 12, borderRadius: 9,
+                  border: `1.5px dashed #BFDBFE`, background: '#F4F8FF',
+                  color: BLUE, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                }}
+              >
+                <IcPlus size={14} color={BLUE} /> Добавить организацию
+              </button>
+            </>
+          )}
+
+          {(mode === 'create' || typeof mode === 'object') && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>
+                  Поддомен <span style={{ color: '#DC2626' }}>*</span>
+                </label>
+                {mode === 'create' ? (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <input
+                        value={form.slug}
+                        onChange={e => setForm(f => ({ ...f, slug: e.target.value.toLowerCase() }))}
+                        placeholder="astana"
+                        style={{
+                          flex: '0 0 200px', padding: '9px 12px', borderRadius: 8,
+                          border: `1.5px solid ${BORDER}`, background: '#fff',
+                          fontSize: 13.5, outline: 'none',
+                        }}
+                      />
+                      <span style={{ fontSize: 13, color: MUTED }}>.kazskills.kz</span>
+                    </div>
+                    <p style={{ margin: '6px 0 0', fontSize: 11.5, color: '#9CA3AF' }}>
+                      Только латиница, цифры и дефисы. 1–30 символов. После создания изменить нельзя.
+                    </p>
+                  </>
+                ) : (
+                  <div style={{
+                    padding: '10px 14px', borderRadius: 8, background: '#F4F6FB',
+                    border: `1.5px solid ${BORDER}`, fontSize: 13, color: '#374151',
+                  }}>
+                    {form.slug}.kazskills.kz
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>
+                  Короткое название <span style={{ color: '#DC2626' }}>*</span>
+                </label>
+                <input
+                  value={form.displayName}
+                  onChange={e => setForm(f => ({ ...f, displayName: e.target.value }))}
+                  placeholder="Astana"
+                  style={{
+                    width: '100%', padding: '9px 12px', borderRadius: 8,
+                    border: `1.5px solid ${BORDER}`, background: '#fff',
+                    fontSize: 13.5, outline: 'none', boxSizing: 'border-box',
+                  }}
+                />
+                <p style={{ margin: '6px 0 0', fontSize: 11.5, color: '#9CA3AF' }}>
+                  Отображается в бейдже на странице входа и в шапке.
+                </p>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: '#374151', marginBottom: 6 }}>
+                  Полное название <span style={{ color: '#DC2626' }}>*</span>
+                </label>
+                <input
+                  value={form.fullName}
+                  onChange={e => setForm(f => ({ ...f, fullName: e.target.value }))}
+                  placeholder="АО «Astana»"
+                  style={{
+                    width: '100%', padding: '9px 12px', borderRadius: 8,
+                    border: `1.5px solid ${BORDER}`, background: '#fff',
+                    fontSize: 13.5, outline: 'none', boxSizing: 'border-box',
+                  }}
+                />
+                <p style={{ margin: '6px 0 0', fontSize: 11.5, color: '#9CA3AF' }}>
+                  Используется в карточке клиента, в Word-отчётах и при создании юзеров.
+                </p>
+              </div>
+
+              {error && (
+                <div style={{
+                  padding: '10px 14px', borderRadius: 8,
+                  background: '#FEF2F2', border: '1px solid #FECACA',
+                  color: '#991B1B', fontSize: 12.5,
+                }}>
+                  {error}
+                </div>
+              )}
+
+              {mode === 'create' && (
+                <div style={{
+                  padding: '12px 14px', borderRadius: 8,
+                  background: '#F0FDF4', border: '1px solid #BBF7D0',
+                  fontSize: 12, color: '#065F46',
+                }}>
+                  <strong>После создания</strong> поддомен будет доступен по адресу:<br/>
+                  <span style={{ fontFamily: 'monospace', fontSize: 12.5 }}>
+                    https://{form.slug || 'slug'}.kazskills.kz
+                  </span><br/>
+                  Wildcard-DNS уже настроен — ничего больше делать не нужно.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        {(mode === 'create' || typeof mode === 'object') && (
+          <div style={{ padding: '14px 24px', borderTop: `1px solid ${BORDER}`, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+            <button onClick={() => setMode('list')} disabled={busy} style={{
+              padding: '9px 20px', borderRadius: 9, border: `1.5px solid ${BORDER}`,
+              background: '#fff', color: '#374151', fontSize: 13.5, fontWeight: 500,
+              cursor: busy ? 'not-allowed' : 'pointer', opacity: busy ? 0.6 : 1,
+            }}>
+              Отмена
+            </button>
+            <button onClick={handleSave} disabled={busy} style={{
+              padding: '9px 22px', borderRadius: 9, border: 'none',
+              background: busy ? '#9CA3AF' : '#059669', color: '#fff',
+              fontSize: 13.5, fontWeight: 600, cursor: busy ? 'not-allowed' : 'pointer',
+              boxShadow: busy ? 'none' : '0 2px 10px rgba(5,150,105,0.3)',
+              display: 'flex', alignItems: 'center', gap: 6,
+            }}>
+              <IcCheck size={14} color="#fff" /> {busy ? 'Сохранение…' : 'Сохранить'}
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // Main Dashboard Page
 // ═══════════════════════════════════════════════════════════════════════════════
 export default function AdminDashboardPage() {
   const navigate = useNavigate();
   const { users } = useUsers();
   const { courses } = useCourses();
+  const tenantOrg = getCurrentOrganization();
 
   const [reportOpen, setReportOpen] = useState(false);
   const [batchOpen, setBatchOpen]   = useState(false);
   const [archiveOpen, setArchiveOpen] = useState(false);
+  const [orgsOpen, setOrgsOpen]     = useState(false);
 
   const totalStudents = users.filter(u => u.role === 'student').length;
   const totalCourses  = courses.filter(c => c.published).length;
@@ -1884,7 +2236,7 @@ export default function AdminDashboardPage() {
         ))}
       </div>
 
-      {/* Main action cards — 4 cards */}
+      {/* Main action cards — 4–5 cards depending on role */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 24 }}>
         {[
           {
@@ -1919,6 +2271,15 @@ export default function AdminDashboardPage() {
             btnIcon: IcDownload,
             onClick: () => setReportOpen(true),
           },
+          // Super-admin only (root domain) — managing tenant organizations
+          ...(tenantOrg ? [] : [{
+            icon: IcBuilding,
+            title: 'Организации',
+            desc: 'Добавить клиента: указать название и поддомен. Каждая организация получает свой адрес slug.kazskills.kz.',
+            btn: 'Управление организациями',
+            btnIcon: IcBuilding,
+            onClick: () => setOrgsOpen(true),
+          }]),
         ].map(({ icon: Icon, title, desc, btn, btnIcon: BtnIcon, onClick }) => (
           <div key={title} style={{
             background: '#fff', borderRadius: 16, padding: '24px 20px',
@@ -1980,6 +2341,7 @@ export default function AdminDashboardPage() {
       <ReportModal open={reportOpen} onClose={() => setReportOpen(false)} />
       <BatchCreateModal open={batchOpen} onClose={() => setBatchOpen(false)} />
       <RequestArchiveModal open={archiveOpen} onClose={() => setArchiveOpen(false)} />
+      <OrganizationsModal open={orgsOpen} onClose={() => setOrgsOpen(false)} />
     </div>
   );
 }
