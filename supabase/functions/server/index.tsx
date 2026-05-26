@@ -52,8 +52,8 @@ app.get("/make-server-3ed1835c/health", (c) => c.json({ status: "ok" }));
 
 // ─── FILE UPLOAD ──────────────────────────────────────────────────────────────
 
-// POST /upload-material — upload PDF or PPTX file to Supabase Storage
-app.post("/make-server-3ed1835c/upload-material", async (c) => {
+// POST /upload-material — upload PDF or PPTX file to Supabase Storage (admin only)
+app.post("/make-server-3ed1835c/upload-material", requireAuth, requireAdmin, async (c) => {
   try {
     const formData = await c.req.formData();
     const file = formData.get("file") as File | null;
@@ -112,8 +112,8 @@ app.get("/make-server-3ed1835c/courses", async (c) => {
   }
 });
 
-// POST /courses — create new course
-app.post("/make-server-3ed1835c/courses", async (c) => {
+// POST /courses — create new course (admin only)
+app.post("/make-server-3ed1835c/courses", requireAuth, requireAdmin, async (c) => {
   try {
     const body = await c.req.json();
     const id = `c_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
@@ -155,8 +155,8 @@ app.get("/make-server-3ed1835c/courses/:id", async (c) => {
   }
 });
 
-// PUT /courses/:id — update course
-app.put("/make-server-3ed1835c/courses/:id", async (c) => {
+// PUT /courses/:id — update course (admin only)
+app.put("/make-server-3ed1835c/courses/:id", requireAuth, requireAdmin, async (c) => {
   try {
     const id = c.req.param("id");
     const existing = await kv.get(`course:${id}`);
@@ -179,8 +179,8 @@ app.put("/make-server-3ed1835c/courses/:id", async (c) => {
   }
 });
 
-// DELETE /courses/:id — delete course
-app.delete("/make-server-3ed1835c/courses/:id", async (c) => {
+// DELETE /courses/:id — delete course (admin only)
+app.delete("/make-server-3ed1835c/courses/:id", requireAuth, requireAdmin, async (c) => {
   try {
     const id = c.req.param("id");
     await kv.del(`course:${id}`);
@@ -262,8 +262,13 @@ app.get("/make-server-3ed1835c/progress/:userId", async (c) => {
 
 // ─── TEST ATTEMPTS ────────────────────────────────────────────────────────────
 
-// POST /attempts/:userId/:courseId — save test attempt
-app.post("/make-server-3ed1835c/attempts/:userId/:courseId", async (c) => {
+// POST /attempts/:userId/:courseId — save test attempt (self or admin)
+app.post("/make-server-3ed1835c/attempts/:userId/:courseId", requireAuth, async (c) => {
+  const sess = c.get("session") as Session;
+  const uid = c.req.param("userId");
+  if (sess.role !== "admin" && sess.userId !== uid) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
   try {
     const { userId, courseId } = c.req.param();
     const body = await c.req.json();
@@ -321,55 +326,149 @@ app.get("/make-server-3ed1835c/attempts/:userId/:courseId", async (c) => {
   }
 });
 
+// ─── AUTH HELPERS ─────────────────────────────────────────────────────────────
+const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+
+interface ServerUser {
+  id: string;
+  email: string;
+  password: string;
+  role: 'admin' | 'student';
+  organization?: string;
+  [k: string]: any;
+}
+
+interface Session {
+  token: string;
+  userId: string;
+  role: 'admin' | 'student';
+  expiresAt: number;
+}
+
+function stripPassword<T extends { password?: string }>(u: T): Omit<T, 'password'> {
+  const { password: _p, ...rest } = u;
+  return rest;
+}
+
+async function getAllUsers(): Promise<ServerUser[]> {
+  const list = await kv.getByPrefix("user:");
+  return (list as ServerUser[]).filter(u => u && u.id);
+}
+
+async function getSession(token: string | undefined): Promise<Session | null> {
+  if (!token) return null;
+  const sess = (await kv.get(`session:${token}`)) as Session | null;
+  if (!sess) return null;
+  if (sess.expiresAt < Date.now()) {
+    await kv.del(`session:${token}`).catch(() => {});
+    return null;
+  }
+  return sess;
+}
+
+// Middleware: require a valid session token. Sets c.set('session', session).
+async function requireAuth(c: any, next: () => Promise<void>) {
+  const token = c.req.header("x-session-token");
+  const sess = await getSession(token);
+  if (!sess) return c.json({ error: "Unauthorized" }, 401);
+  c.set("session", sess);
+  await next();
+}
+
+// Middleware: require admin role.
+async function requireAdmin(c: any, next: () => Promise<void>) {
+  const sess = c.get("session") as Session | undefined;
+  if (!sess || sess.role !== "admin") return c.json({ error: "Forbidden" }, 403);
+  await next();
+}
+
+// ─── AUTH ENDPOINTS ───────────────────────────────────────────────────────────
+
+// POST /auth/login {email, password}
+//   → 200 {token, user (no password)} | 401
+app.post("/make-server-3ed1835c/auth/login", async (c) => {
+  try {
+    const { email, password } = await c.req.json();
+    if (!email || !password) return c.json({ error: "email and password required" }, 400);
+
+    const users = await getAllUsers();
+    const found = users.find(u =>
+      u.email === email && u.password === password && u.status !== "blocked"
+    );
+    if (!found) return c.json({ error: "Invalid credentials" }, 401);
+
+    const token = crypto.randomUUID();
+    const session: Session = {
+      token,
+      userId: found.id,
+      role: found.role,
+      expiresAt: Date.now() + SESSION_TTL_MS,
+    };
+    await kv.set(`session:${token}`, session);
+
+    return c.json({ token, user: stripPassword(found), expiresAt: session.expiresAt });
+  } catch (err) {
+    console.log("Error in /auth/login:", err);
+    return c.json({ error: `Login failed: ${err}` }, 500);
+  }
+});
+
+// GET /auth/me — return the current user (validates token)
+app.get("/make-server-3ed1835c/auth/me", requireAuth, async (c) => {
+  const sess = c.get("session") as Session;
+  const user = await kv.get(`user:${sess.userId}`);
+  if (!user) return c.json({ error: "User not found" }, 404);
+  return c.json(stripPassword(user as ServerUser));
+});
+
+// POST /auth/logout — invalidate the current token
+app.post("/make-server-3ed1835c/auth/logout", async (c) => {
+  const token = c.req.header("x-session-token");
+  if (token) await kv.del(`session:${token}`).catch(() => {});
+  return c.json({ ok: true });
+});
+
 // ─── USERS ────────────────────────────────────────────────────────────────────
 
-// GET /users — list all users
-app.get("/make-server-3ed1835c/users", async (c) => {
+// GET /users — list all users (passwords stripped)
+// Auth required. Admin sees everyone; student sees only themselves.
+app.get("/make-server-3ed1835c/users", requireAuth, async (c) => {
   try {
-    const idList: string[] = (await kv.get("user_index")) ?? [];
-    if (idList.length === 0) return c.json([]);
-    const userKeys = idList.map((id) => `user:${id}`);
-    const users = await kv.mget(userKeys);
-    return c.json(users.filter(Boolean));
+    const sess = c.get("session") as Session;
+    const users = await getAllUsers();
+    if (sess.role !== "admin") {
+      const self = users.find(u => u.id === sess.userId);
+      return c.json(self ? [stripPassword(self)] : []);
+    }
+    return c.json(users.map(stripPassword));
   } catch (err) {
     console.log("Error listing users:", err);
     return c.json({ error: `Failed to list users: ${err}` }, 500);
   }
 });
 
-// POST /users — create a single user (caller supplies full payload incl. id)
-app.post("/make-server-3ed1835c/users", async (c) => {
+// POST /users — create a single user (admin only)
+app.post("/make-server-3ed1835c/users", requireAuth, requireAdmin, async (c) => {
   try {
     const body = await c.req.json();
     if (!body.id) return c.json({ error: "id is required" }, 400);
     await kv.set(`user:${body.id}`, body);
-    const idList: string[] = (await kv.get("user_index")) ?? [];
-    if (!idList.includes(body.id)) {
-      idList.push(body.id);
-      await kv.set("user_index", idList);
-    }
-    return c.json(body, 201);
+    return c.json(stripPassword(body), 201);
   } catch (err) {
     console.log("Error creating user:", err);
     return c.json({ error: `Failed to create user: ${err}` }, 500);
   }
 });
 
-// POST /users/batch — create many users at once
-app.post("/make-server-3ed1835c/users/batch", async (c) => {
+// POST /users/batch — create many users at once (admin only)
+app.post("/make-server-3ed1835c/users/batch", requireAuth, requireAdmin, async (c) => {
   try {
     const body = await c.req.json();
-    const users: any[] = Array.isArray(body) ? body : body.users ?? [];
+    const users: ServerUser[] = Array.isArray(body) ? body : body.users ?? [];
     if (users.length === 0) return c.json([]);
-
-    const keys = users.map((u) => `user:${u.id}`);
+    const keys = users.map(u => `user:${u.id}`);
     await kv.mset(keys, users);
-
-    const idList: string[] = (await kv.get("user_index")) ?? [];
-    for (const u of users) if (!idList.includes(u.id)) idList.push(u.id);
-    await kv.set("user_index", idList);
-
-    return c.json(users, 201);
+    return c.json(users.map(stripPassword), 201);
   } catch (err) {
     console.log("Error creating users batch:", err);
     return c.json({ error: `Failed to create users batch: ${err}` }, 500);
@@ -377,28 +476,35 @@ app.post("/make-server-3ed1835c/users/batch", async (c) => {
 });
 
 // PUT /users/:id — update a user
-app.put("/make-server-3ed1835c/users/:id", async (c) => {
+// Admin can update anyone; student only themselves.
+app.put("/make-server-3ed1835c/users/:id", requireAuth, async (c) => {
   try {
+    const sess = c.get("session") as Session;
     const id = c.req.param("id");
+    if (sess.role !== "admin" && sess.userId !== id) {
+      return c.json({ error: "Forbidden" }, 403);
+    }
     const existing = await kv.get(`user:${id}`);
     if (!existing) return c.json({ error: "User not found" }, 404);
     const body = await c.req.json();
+    // Students cannot change their role.
+    if (sess.role !== "admin" && body.role && body.role !== existing.role) {
+      delete body.role;
+    }
     const updated = { ...existing, ...body, id };
     await kv.set(`user:${id}`, updated);
-    return c.json(updated);
+    return c.json(stripPassword(updated as ServerUser));
   } catch (err) {
     console.log("Error updating user:", err);
     return c.json({ error: `Failed to update user: ${err}` }, 500);
   }
 });
 
-// DELETE /users/:id — delete a user
-app.delete("/make-server-3ed1835c/users/:id", async (c) => {
+// DELETE /users/:id — admin only
+app.delete("/make-server-3ed1835c/users/:id", requireAuth, requireAdmin, async (c) => {
   try {
     const id = c.req.param("id");
     await kv.del(`user:${id}`);
-    const idList: string[] = (await kv.get("user_index")) ?? [];
-    await kv.set("user_index", idList.filter((u) => u !== id));
     return c.json({ success: true });
   } catch (err) {
     console.log("Error deleting user:", err);
@@ -406,36 +512,30 @@ app.delete("/make-server-3ed1835c/users/:id", async (c) => {
   }
 });
 
-// POST /users/replace-all — replace entire user set (used for initial seed + sync)
-app.post("/make-server-3ed1835c/users/replace-all", async (c) => {
+// POST /users/seed — write users only if the store is currently empty (idempotent).
+// No auth required: this is bootstrap-only, refuses to overwrite if data exists.
+app.post("/make-server-3ed1835c/users/seed", async (c) => {
   try {
+    const existing = await getAllUsers();
+    if (existing.length > 0) {
+      return c.json({ seeded: false, count: existing.length, reason: "already-seeded" });
+    }
     const body = await c.req.json();
-    const users: any[] = Array.isArray(body) ? body : body.users ?? [];
-
-    // Remove old users
-    const oldIds: string[] = (await kv.get("user_index")) ?? [];
-    if (oldIds.length > 0) {
-      await kv.mdel(oldIds.map((id) => `user:${id}`));
-    }
-
-    // Write new users
-    if (users.length > 0) {
-      const keys = users.map((u) => `user:${u.id}`);
-      await kv.mset(keys, users);
-    }
-    await kv.set("user_index", users.map((u) => u.id));
-
-    return c.json({ count: users.length });
+    const users: ServerUser[] = Array.isArray(body) ? body : body.users ?? [];
+    if (users.length === 0) return c.json({ seeded: false, count: 0, reason: "no-users" });
+    const keys = users.map(u => `user:${u.id}`);
+    await kv.mset(keys, users);
+    return c.json({ seeded: true, count: users.length });
   } catch (err) {
-    console.log("Error in replace-all:", err);
-    return c.json({ error: `Failed to replace users: ${err}` }, 500);
+    console.log("Error in /users/seed:", err);
+    return c.json({ error: `Failed to seed users: ${err}` }, 500);
   }
 });
 
 // ─── ANALYTICS ────────────────────────────────────────────────────────────────
 
-// GET /analytics — summary stats
-app.get("/make-server-3ed1835c/analytics", async (c) => {
+// GET /analytics — summary stats (admin only)
+app.get("/make-server-3ed1835c/analytics", requireAuth, requireAdmin, async (c) => {
   try {
     const idList: string[] = (await kv.get("course_index")) ?? [];
     const totalCourses = idList.length;

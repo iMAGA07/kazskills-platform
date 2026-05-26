@@ -48,8 +48,13 @@ export const ORGANIZATIONS: Organization[] = [
 export function getOrganizationSlug(): string | null {
   if (typeof window === 'undefined') return null;
   const host = window.location.hostname;
-  // localhost / IP — treat as no tenant (super-admin view)
-  if (host === 'localhost' || /^\d+\.\d+\.\d+\.\d+$/.test(host)) return null;
+  // localhost, IPv4, IPv6 (literal or bracketed), and *.local — treat as no tenant.
+  if (
+    host === 'localhost' ||
+    host.endsWith('.local') ||
+    host.includes('[') || host.includes(']') || host.includes(':') ||
+    /^\d+\.\d+\.\d+\.\d+$/.test(host)
+  ) return null;
   const parts = host.split('.');
   if (parts.length < 3) return null;
   const sub = parts[0];

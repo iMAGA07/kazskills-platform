@@ -5,6 +5,21 @@ import { getOrganizationSlug } from '../lib/organization';
 const BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3ed1835c`;
 const HEADERS = { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` };
 
+function authHeaders(): Record<string, string> {
+  const token = localStorage.getItem('kazskills_token');
+  const h: Record<string, string> = { ...HEADERS };
+  if (token) h['x-session-token'] = token;
+  return h;
+}
+
+function handle401(res: Response): boolean {
+  if (res.status === 401) {
+    window.dispatchEvent(new Event('session-expired'));
+    return true;
+  }
+  return false;
+}
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 export type ContentType = 'video' | 'pdf' | 'pptx';
 export type QuestionType = 'mcq' | 'open_answer' | 'input_field' | 'scale';
@@ -152,7 +167,7 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
       organizationSlug: input.organizationSlug ?? getOrganizationSlug() ?? undefined,
     };
     const res  = await fetch(`${BASE}/courses`, {
-      method: 'POST', headers: HEADERS, body: JSON.stringify(payload),
+      method: 'POST', headers: authHeaders(), body: JSON.stringify(payload),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? 'Failed to create course');
@@ -162,7 +177,7 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
 
   const updateCourse = useCallback(async (id: string, input: Partial<CourseInput>): Promise<Course> => {
     const res  = await fetch(`${BASE}/courses/${id}`, {
-      method: 'PUT', headers: HEADERS, body: JSON.stringify(input),
+      method: 'PUT', headers: authHeaders(), body: JSON.stringify(input),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? 'Failed to update course');
@@ -172,7 +187,7 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
 
   const deleteCourse = useCallback(async (id: string): Promise<void> => {
     const res = await fetch(`${BASE}/courses/${id}`, {
-      method: 'DELETE', headers: HEADERS,
+      method: 'DELETE', headers: authHeaders(),
     });
     if (!res.ok) {
       const data = await res.json();
@@ -200,7 +215,7 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
 
   const markLessonComplete = useCallback(async (userId: string, courseId: string, lessonId: string): Promise<UserProgress> => {
     const res  = await fetch(`${BASE}/progress/${userId}/${courseId}/lesson`, {
-      method: 'POST', headers: HEADERS, body: JSON.stringify({ lessonId }),
+      method: 'POST', headers: authHeaders(), body: JSON.stringify({ lessonId }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? 'Failed to mark lesson complete');
@@ -216,7 +231,7 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
     attempt: Omit<TestAttempt, 'id' | 'userId' | 'courseId' | 'completedAt'>
   ) => {
     const res  = await fetch(`${BASE}/attempts/${userId}/${courseId}`, {
-      method: 'POST', headers: HEADERS, body: JSON.stringify(attempt),
+      method: 'POST', headers: authHeaders(), body: JSON.stringify(attempt),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? 'Failed to save attempt');

@@ -1,19 +1,40 @@
 import React, { createContext, useContext, useMemo, useState, useEffect, useCallback } from 'react';
+// authHeaders attaches both the Supabase anon key and our x-session-token (if present).
 import type { User, UserRole } from './AuthContext';
 import { userBelongsToCurrentTenant, getOrganizationSlug } from '../lib/organization';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { toast } from '../components/shared/Toast';
 
 const BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3ed1835c`;
-const HEADERS = { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` };
 const STORAGE_KEY = 'kazskills_managed_users';
+const TOKEN_KEY = 'kazskills_token';
 
-// Background sync to server; failures are logged but never thrown (UI stays responsive).
+function authHeaders(): Record<string, string> {
+  const token = localStorage.getItem(TOKEN_KEY);
+  const h: Record<string, string> = { 'Content-Type': 'application/json' };
+  // We keep the public anon key for Supabase functions invocation (the platform requires it),
+  // and add our own session token for app-level authorization on protected endpoints.
+  h.Authorization = `Bearer ${publicAnonKey}`;
+  if (token) h['x-session-token'] = token;
+  return h;
+}
+
+// Background sync to server; failures surface as a single throttled toast (UI stays responsive).
 async function bgFetch(path: string, init?: RequestInit) {
   try {
-    const res = await fetch(`${BASE}${path}`, { ...init, headers: { ...HEADERS, ...(init?.headers ?? {}) } });
-    if (!res.ok) console.warn(`User sync ${path} failed:`, await res.text());
+    const res = await fetch(`${BASE}${path}`, { ...init, headers: { ...authHeaders(), ...(init?.headers ?? {}) } });
+    if (res.status === 401) {
+      window.dispatchEvent(new Event('session-expired'));
+      return;
+    }
+    if (!res.ok) {
+      const body = await res.text();
+      console.warn(`User sync ${path} failed:`, body);
+      toast.error('Не удалось сохранить изменения на сервере. Локально сохранено — повторите позже.');
+    }
   } catch (e) {
     console.warn(`User sync ${path} error:`, e);
+    toast.error('Нет связи с сервером. Изменения сохранены локально.');
   }
 }
 
@@ -264,37 +285,41 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
     }
   });
 
-  // Initial sync: fetch from server. If server is empty, seed with our current state
-  // (so existing localStorage data isn't lost on first migration).
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`${BASE}/users`, { headers: HEADERS });
-        if (!res.ok) return;
-        const data: ManagedUser[] = await res.json();
-        if (cancelled) return;
-        if (Array.isArray(data) && data.length > 0) {
-          setAllUsers(data);
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-        } else {
-          // Server empty — seed with whatever we currently have (cache or INITIAL_USERS).
-          const seed = (() => {
-            try {
-              const c = localStorage.getItem(STORAGE_KEY);
-              return c ? (JSON.parse(c) as ManagedUser[]) : INITIAL_USERS;
-            } catch {
-              return INITIAL_USERS;
-            }
-          })();
-          bgFetch('/users/replace-all', { method: 'POST', body: JSON.stringify(seed) });
-        }
-      } catch (e) {
-        console.warn('Initial user sync failed, using local cache:', e);
+  const syncFromServer = useCallback(async () => {
+    // Always try to ensure the server is seeded — it's idempotent (no-op if not empty).
+    fetch(`${BASE}/users/seed`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${publicAnonKey}` },
+      body: JSON.stringify(INITIAL_USERS),
+    }).catch(() => {});
+
+    // Then pull the authoritative list. Requires auth token; if absent, we use cache.
+    const token = localStorage.getItem(TOKEN_KEY);
+    if (!token) return;
+    try {
+      const res = await fetch(`${BASE}/users`, { headers: authHeaders() });
+      if (res.status === 401) {
+        window.dispatchEvent(new Event('session-expired'));
+        return;
       }
-    })();
-    return () => { cancelled = true; };
+      if (!res.ok) return;
+      const data: ManagedUser[] = await res.json();
+      if (Array.isArray(data) && data.length > 0) {
+        setAllUsers(data);
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      }
+    } catch (e) {
+      console.warn('User sync failed, using local cache:', e);
+    }
   }, []);
+
+  // Initial sync + re-sync on login/logout.
+  useEffect(() => {
+    syncFromServer();
+    const onAuthChange = () => syncFromServer();
+    window.addEventListener('auth-changed', onAuthChange);
+    return () => window.removeEventListener('auth-changed', onAuthChange);
+  }, [syncFromServer]);
 
   // Tenant-scoped view: on root domain shows everything, on subdomain only that org's users.
   const users = useMemo(() => {
@@ -302,9 +327,15 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
     return allUsers.filter(u => userBelongsToCurrentTenant(u.organization));
   }, [allUsers]);
 
-  const persist = (updated: ManagedUser[]) => {
-    setAllUsers(updated);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  // Mutations use the functional setState form so that multiple sequential calls
+  // inside the same event handler (e.g. RequestEditView save) all see the latest
+  // state, not a stale closure of `allUsers`.
+  const persistFn = (recipe: (prev: ManagedUser[]) => ManagedUser[]) => {
+    setAllUsers(prev => {
+      const next = recipe(prev);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+      return next;
+    });
   };
 
   const addUser = useCallback((userData: NewUserInput) => {
@@ -315,16 +346,22 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
       enrolledCourses: userData.enrolledCourses ?? [],
       completedCourses: [],
     };
-    persist([...allUsers, newUser]);
+    persistFn(prev => [...prev, newUser]);
     bgFetch('/users', { method: 'POST', body: JSON.stringify(newUser) });
-  }, [allUsers]);
+  }, []);
 
   const updateUser = useCallback((id: string, updates: Partial<ManagedUser>) => {
-    const next = allUsers.map(u => u.id === id ? { ...u, ...updates } : u);
-    persist(next);
-    const updated = next.find(u => u.id === id);
+    let updated: ManagedUser | undefined;
+    persistFn(prev => {
+      const next = prev.map(u => {
+        if (u.id !== id) return u;
+        updated = { ...u, ...updates };
+        return updated;
+      });
+      return next;
+    });
     if (updated) bgFetch(`/users/${id}`, { method: 'PUT', body: JSON.stringify(updated) });
-  }, [allUsers]);
+  }, []);
 
   const addUsersBatch = useCallback((
     batch: BatchUserInput[],
@@ -349,22 +386,25 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
       status: 'active' as const,
       requestNumber,
     }));
-    persist([...allUsers, ...newUsers]);
+    persistFn(prev => [...prev, ...newUsers]);
     bgFetch('/users/batch', { method: 'POST', body: JSON.stringify(newUsers) });
     return newUsers;
-  }, [allUsers]);
+  }, []);
 
   const deleteUser = useCallback((id: string) => {
-    persist(allUsers.filter(u => u.id !== id));
+    persistFn(prev => prev.filter(u => u.id !== id));
     bgFetch(`/users/${id}`, { method: 'DELETE' });
-  }, [allUsers]);
+  }, []);
 
   const toggleStatus = useCallback((id: string) => {
-    const next = allUsers.map(u => u.id === id ? { ...u, status: (u.status === 'active' ? 'blocked' : 'active') as 'active' | 'blocked' } : u);
-    persist(next);
-    const updated = next.find(u => u.id === id);
-    if (updated) bgFetch(`/users/${id}`, { method: 'PUT', body: JSON.stringify({ status: updated.status }) });
-  }, [allUsers]);
+    let newStatus: 'active' | 'blocked' | undefined;
+    persistFn(prev => prev.map(u => {
+      if (u.id !== id) return u;
+      newStatus = u.status === 'active' ? 'blocked' : 'active';
+      return { ...u, status: newStatus };
+    }));
+    if (newStatus) bgFetch(`/users/${id}`, { method: 'PUT', body: JSON.stringify({ status: newStatus }) });
+  }, []);
 
   return (
     <UsersContext.Provider value={{ users, allUsers, addUser, addUsersBatch, updateUser, deleteUser, toggleStatus }}>

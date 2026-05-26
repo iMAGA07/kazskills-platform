@@ -85,3 +85,23 @@ export const getByPrefix = async (prefix: string): Promise<any[]> => {
   }
   return data?.map((d) => d.value) ?? [];
 };
+
+// Search and return raw {key, value} pairs by prefix.
+export const getEntriesByPrefix = async (prefix: string): Promise<Array<{ key: string; value: any }>> => {
+  const supabase = client()
+  const { data, error } = await supabase.from("kv_store_3ed1835c").select("key, value").like("key", prefix + "%");
+  if (error) {
+    throw new Error(error.message);
+  }
+  return data ?? [];
+};
+
+// Delete every key matching a prefix.
+export const delByPrefix = async (prefix: string): Promise<number> => {
+  const supabase = client()
+  const { data, error } = await supabase.from("kv_store_3ed1835c").delete().like("key", prefix + "%").select("key");
+  if (error) {
+    throw new Error(error.message);
+  }
+  return data?.length ?? 0;
+};
