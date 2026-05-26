@@ -7,15 +7,35 @@ import { useLanguage } from '../../context/LanguageContext';
 import { getOrganizationName, getCurrentOrganization, useOrganizations } from '../../lib/organization';
 
 // Logo component — uses the tenant org logo on subdomains, KAZSKILLS on the root.
+// Click → user's home page (role-aware).
 const Logo = () => {
   // Subscribe to the registry so the header updates as soon as the admin
   // uploads or changes a logo (no F5 needed).
   useOrganizations();
   const org = getCurrentOrganization();
+  const { user } = useAuth();
+  const nav = useNavigate();
+  const goHome = () => {
+    nav(user?.role === 'admin' ? '/admin/dashboard' : '/student/courses');
+  };
+
+  const wrap = (content: React.ReactNode) => (
+    <button
+      onClick={goHome}
+      title="На главную"
+      style={{
+        display: 'flex', alignItems: 'center', gap: '10px',
+        background: 'transparent', border: 'none', padding: 0,
+        cursor: 'pointer', textAlign: 'left',
+      }}
+    >
+      {content}
+    </button>
+  );
 
   if (org?.logoUrl) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+    return wrap(
+      <>
         <img
           src={org.logoUrl} alt={org.displayName}
           style={{ height: 40, maxWidth: 140, objectFit: 'contain' }}
@@ -28,12 +48,12 @@ const Logo = () => {
             ОБУЧАЮЩАЯ ПЛАТФОРМА
           </div>
         </div>
-      </div>
+      </>
     );
   }
 
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+  return wrap(
+    <>
       <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
         <rect width="36" height="36" rx="8" fill="url(#grad)"/>
         <path d="M18 10L26 14V22L18 26L10 22V14L18 10Z" fill="#fff" opacity="0.9"/>
@@ -56,7 +76,7 @@ const Logo = () => {
           ОБУЧАЮЩАЯ ПЛАТФОРМА
         </div>
       </div>
-    </div>
+    </>
   );
 };
 
@@ -382,8 +402,70 @@ export function AppLayout() {
 
       {/* Page */}
       <main style={{ flex: 1, overflowY: 'auto', padding: '28px', background: '#EDF0F8' }}>
+        <BackBar />
         <Outlet />
       </main>
+    </div>
+  );
+}
+
+// ─── Back button bar ─────────────────────────────────────────────────────────
+// Shown on every inner page. Hidden on the role's "home tabs" — the user is
+// already at a top-level route, no point in offering Back to login.
+const HOME_PATHS = new Set<string>([
+  '/student/courses',
+  '/student/dashboard',
+  '/student/documents',
+  '/student/certificates',
+  '/admin/dashboard',
+  '/admin/courses',
+  '/admin/users',
+  '/admin/analytics',
+]);
+
+function BackBar() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { user } = useAuth();
+
+  if (HOME_PATHS.has(location.pathname)) return null;
+
+  const handleBack = () => {
+    // Prefer real browser history when available, otherwise fall back to home.
+    if (window.history.length > 1) {
+      navigate(-1);
+    } else {
+      navigate(user?.role === 'admin' ? '/admin/dashboard' : '/student/courses');
+    }
+  };
+
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <button
+        onClick={handleBack}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          padding: '7px 14px', borderRadius: 999,
+          border: '1.5px solid #E3E7F0', background: '#fff',
+          color: '#374151', fontSize: 13, fontWeight: 500, cursor: 'pointer',
+          transition: 'all 0.15s',
+        }}
+        onMouseEnter={e => {
+          (e.currentTarget as HTMLButtonElement).style.borderColor = '#2B5CE6';
+          (e.currentTarget as HTMLButtonElement).style.color = '#2B5CE6';
+          (e.currentTarget as HTMLButtonElement).style.background = '#EBF1FE';
+        }}
+        onMouseLeave={e => {
+          (e.currentTarget as HTMLButtonElement).style.borderColor = '#E3E7F0';
+          (e.currentTarget as HTMLButtonElement).style.color = '#374151';
+          (e.currentTarget as HTMLButtonElement).style.background = '#fff';
+        }}
+      >
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+          <path d="M15 18l-6-6 6-6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+        Назад
+      </button>
     </div>
   );
 }
