@@ -276,7 +276,7 @@ async function generateStatistika(
     const colW = Math.floor(5000 / relevant.length);
     const hdrCells = [
       hdrCell('№', 600), hdrCell('Ф. И. О', 2400),
-      ...relevant.map(c => hdrCell(c.title.length > 20 ? c.title.slice(0, 18) + '…' : c.title, colW)),
+      ...relevant.map(c => hdrCell(c.title, colW)),
     ];
     const hdr = new TableRow({ tableHeader: true, children: hdrCells });
 
