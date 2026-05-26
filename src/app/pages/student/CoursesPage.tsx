@@ -26,11 +26,14 @@ export default function CoursesPage() {
   const [search, setSearch]           = useState('');
   const [progressMap, setProgressMap] = useState<Record<string, UserProgress>>({});
 
+  // Student sees only the courses the admin enrolled them in.
+  const enrolledIds = new Set(user?.enrolledCourses ?? []);
+  const visible = courses.filter(c => c.published && enrolledIds.has(c.id));
+
   useEffect(() => {
-    if (!user || courses.length === 0) return;
-    const published = courses.filter(c => c.published);
+    if (!user || visible.length === 0) return;
     Promise.all(
-      published.map(c => getProgress(user.id, c.id).then(p => ({ id: c.id, p })))
+      visible.map(c => getProgress(user.id, c.id).then(p => ({ id: c.id, p })))
     ).then(results => {
       const map: Record<string, UserProgress> = {};
       results.forEach(({ id, p }) => { map[id] = p; });
@@ -38,8 +41,7 @@ export default function CoursesPage() {
     }).catch(console.error);
   }, [user, courses]);
 
-  const published = courses.filter(c => c.published);
-  const filtered  = published.filter(c =>
+  const filtered = visible.filter(c =>
     search === '' || c.title.toLowerCase().includes(search.toLowerCase())
   );
 
@@ -85,7 +87,11 @@ export default function CoursesPage() {
         <div style={{ padding: '60px', textAlign: 'center', color: '#9CA3AF' }}>
           <IcBook size={40} color="#D1D5DB" style={{ marginBottom: 12 }} />
           <p style={{ margin: 0, fontSize: '14px' }}>
-            {search ? `Ничего не найдено` : 'Курсов пока нет'}
+            {search
+              ? 'Ничего не найдено'
+              : enrolledIds.size === 0
+                ? 'Вам пока не назначили ни одного курса. Обратитесь к администратору.'
+                : 'Назначенные курсы пока не опубликованы.'}
           </p>
         </div>
       )}

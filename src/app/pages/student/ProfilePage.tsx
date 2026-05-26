@@ -24,7 +24,9 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (!user || courses.length === 0) return;
-    Promise.all(courses.filter(c => c.published).map(c => getProgress(user.id, c.id)))
+    const enrolledIds = new Set(user.enrolledCourses ?? []);
+    const assigned = courses.filter(c => c.published && enrolledIds.has(c.id));
+    Promise.all(assigned.map(c => getProgress(user.id, c.id)))
       .then(ps => setProgressList(ps.filter(Boolean)))
       .catch(console.error);
   }, [user, courses]);

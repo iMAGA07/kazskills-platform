@@ -42,14 +42,15 @@ export default function CertificatesPage() {
 
   useEffect(() => {
     if (!user || courses.length === 0) { setLoading(false); return; }
-    const published = courses.filter(c => c.published);
-    Promise.all(published.map(c => getProgress(user.id, c.id)))
+    const enrolledIds = new Set(user.enrolledCourses ?? []);
+    const assigned = courses.filter(c => c.published && enrolledIds.has(c.id));
+    Promise.all(assigned.map(c => getProgress(user.id, c.id)))
       .then(progresses => {
         const completed: CertData[] = [];
         progresses.forEach((p, i) => {
           if (p.status === 'completed') {
             const lastAttempt = p.attempts?.[p.attempts.length - 1];
-            const course = published[i];
+            const course = assigned[i];
             const year = new Date(lastAttempt?.completedAt ?? Date.now()).getFullYear();
             completed.push({
               courseId: course.id,

@@ -1,11 +1,13 @@
 import React from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router';
+import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { useCourses } from '../../context/CoursesContext';
 import { IcCheckCircle, IcXCircle, IcMedal, IcRefresh, IcArrowLeft, IcTimer, IcTarget, IcTrendingUp, IcAlarm } from '../../components/Icons';
 
 export default function ResultsPage() {
   const { courseId } = useParams<{ courseId: string }>();
+  const { user } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
@@ -14,7 +16,11 @@ export default function ResultsPage() {
   const course = courseId ? getCourse(courseId) : undefined;
   const state = location.state as { score: number; passed: boolean; timeSpent: number; autoSubmit?: boolean } | null;
 
+  // Enrollment guard.
+  const isAdmin = user?.role === 'admin';
+  const isEnrolled = !!user && !!courseId && (user.enrolledCourses ?? []).includes(courseId);
   if (!course || !state) { navigate('/student/courses'); return null; }
+  if (!isAdmin && !isEnrolled) { navigate('/student/courses', { replace: true }); return null; }
 
   const { score, passed, timeSpent, autoSubmit } = state;
   const passingScore = course.test.passingScore;

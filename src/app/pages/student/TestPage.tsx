@@ -20,6 +20,15 @@ export default function TestPage() {
   const { getCourse, saveAttempt } = useCourses();
 
   const course = courseId ? getCourse(courseId) : undefined;
+
+  // Enrollment guard — students can only take tests for assigned courses.
+  const isAdmin = user?.role === 'admin';
+  const isEnrolled = !!user && !!courseId && (user.enrolledCourses ?? []).includes(courseId);
+  useEffect(() => {
+    if (!course || !user) return;
+    if (!isAdmin && !isEnrolled) navigate('/student/courses', { replace: true });
+  }, [course, user, isAdmin, isEnrolled, navigate]);
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const handleSubmitRef = useRef<(autoSubmit?: boolean) => Promise<void>>(async () => {});

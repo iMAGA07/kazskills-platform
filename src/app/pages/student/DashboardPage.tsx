@@ -43,13 +43,16 @@ export default function DashboardPage() {
 
   const uid = user?.id ?? '';
 
-  // Load progress for all published courses
+  // Only courses assigned to this student (admin-controlled enrolledCourses).
+  const enrolledIds = new Set(user?.enrolledCourses ?? []);
+  const assignedCourses = courses.filter(c => c.published && enrolledIds.has(c.id));
+
+  // Load progress only for assigned courses.
   useEffect(() => {
-    if (!uid || courses.length === 0) { setProgressLoading(false); return; }
-    const published = courses.filter(c => c.published);
+    if (!uid || assignedCourses.length === 0) { setProgressLoading(false); return; }
     setProgressLoading(true);
     Promise.all(
-      published.map(c => getProgress(uid, c.id).then(p => ({ id: c.id, p })))
+      assignedCourses.map(c => getProgress(uid, c.id).then(p => ({ id: c.id, p })))
     ).then(results => {
       const map: Record<string, UserProgress> = {};
       results.forEach(({ id, p }) => { if (p) map[id] = p; });
@@ -102,7 +105,7 @@ export default function DashboardPage() {
       <div style={{ display: 'flex', gap: '14px', marginBottom: '28px', flexWrap: 'wrap' }}>
         <StatCard value={active.length}    label="В процессе"     icon={IcBook}        />
         <StatCard value={completed.length} label="Завершено"      icon={IcCheckCircle} />
-        <StatCard value={courses.filter(c => c.published).length} label="Доступных курсов" icon={IcMedal} />
+        <StatCard value={assignedCourses.length} label="Назначенных курсов" icon={IcMedal} />
         <StatCard value={allProgress.reduce((s, p) => s + (p.attempts?.length || 0), 0)} label="Попыток тестов" icon={IcClock} />
       </div>
 

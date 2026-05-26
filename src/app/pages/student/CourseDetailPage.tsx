@@ -16,19 +16,28 @@ export default function CourseDetailPage() {
 
   const course = id ? getCourse(id) : undefined;
 
+  // Students may only open courses they're enrolled into. Admins (if they ever
+  // hit this page) can open anything — but normally they won't be here because
+  // the route is gated by StudentGuard. We still keep the check resilient.
+  const isAdmin = user?.role === 'admin';
+  const isEnrolled = !!user && !!id && (user.enrolledCourses ?? []).includes(id);
+  const canView = isAdmin || isEnrolled;
+
   useEffect(() => {
-    if (!user || !id) return;
+    if (!user || !id || !canView) return;
     getProgress(user.id, id).then(setProgress).catch(console.error);
-  }, [user, id]);
+  }, [user, id, canView]);
 
   if (loading && !course) {
     return <div style={{ textAlign: 'center', padding: '60px', color: '#9CA3AF' }}>Загрузка...</div>;
   }
 
-  if (!course) {
+  if (!course || !canView) {
     return (
       <div style={{ textAlign: 'center', padding: '60px' }}>
-        <p style={{ color: '#6B7280' }}>Курс не найден</p>
+        <p style={{ color: '#6B7280' }}>
+          {!course ? 'Курс не найден' : 'Этот курс вам не назначен. Обратитесь к администратору.'}
+        </p>
         <button onClick={() => navigate('/student/courses')}
           style={{ color: '#2B5CE6', background: 'none', border: 'none', cursor: 'pointer', marginTop: '12px' }}>
           ← Вернуться к курсам

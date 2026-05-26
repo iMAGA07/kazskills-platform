@@ -371,7 +371,23 @@ export default function LearnPage() {
     getProgress(user.id, courseId).then(p => setProgress(p)).catch(console.error);
   }, [user, courseId]);
 
+  // Enrollment guard: students can only learn courses assigned to them.
+  const isAdmin = user?.role === 'admin';
+  const isEnrolled = !!user && !!courseId && (user.enrolledCourses ?? []).includes(courseId);
   if (!course) return <div style={{ color: '#6B7280', textAlign: 'center', padding: '60px' }}>Курс не найден</div>;
+  if (!isAdmin && !isEnrolled) {
+    return (
+      <div style={{ color: '#6B7280', textAlign: 'center', padding: '60px' }}>
+        Этот курс вам не назначен. Обратитесь к администратору.
+        <div style={{ marginTop: 12 }}>
+          <button onClick={() => navigate('/student/courses')}
+            style={{ color: '#2B5CE6', background: 'none', border: 'none', cursor: 'pointer' }}>
+            ← Вернуться к курсам
+          </button>
+        </div>
+      </div>
+    );
+  }
   if (!lesson)  return <div style={{ color: '#6B7280', textAlign: 'center', padding: '60px' }}>Материал не найден</div>;
 
   const youtubeId = lesson.type === 'video' ? getYouTubeId(lesson.url || '') : null;
