@@ -317,8 +317,19 @@ export default function TestPage() {
           </div>
         </div>
 
-        <div style={{ flex: 1, padding: 12, overflowY: 'auto' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6 }}>
+        <div style={{
+          flex: 1,
+          padding: isMobile ? '10px 12px' : 12,
+          overflowY: isMobile ? 'visible' : 'auto',
+        }}>
+          <div style={{
+            display: isMobile ? 'flex' : 'grid',
+            gridTemplateColumns: isMobile ? undefined : 'repeat(4, 1fr)',
+            gap: isMobile ? 6 : 6,
+            overflowX: isMobile ? 'auto' : 'visible',
+            scrollbarWidth: 'none' as const,
+            paddingBottom: isMobile ? 2 : 0,
+          }}>
             {questions.map((qItem, idx) => {
               const answered = answers[qItem.id] !== undefined && answers[qItem.id] !== '';
               const active = idx === currentQ;
@@ -327,12 +338,15 @@ export default function TestPage() {
                   key={qItem.id}
                   onClick={() => setCurrentQ(idx)}
                   style={{
-                    aspectRatio: '1', borderRadius: 7,
+                    width: isMobile ? 36 : undefined,
+                    height: isMobile ? 36 : undefined,
+                    aspectRatio: isMobile ? undefined : '1',
+                    borderRadius: 8,
                     background: active ? '#2B5CE6' : answered ? '#ECFDF5' : '#F4F6FB',
                     color: active ? '#fff' : answered ? '#059669' : '#9CA3AF',
-                    cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                    cursor: 'pointer', fontSize: 13, fontWeight: 700,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    transition: 'all 0.15s',
+                    transition: 'all 0.15s', flexShrink: 0,
                     border: active ? 'none' : answered ? '1px solid #A7F3D0' : '1px solid #E3E7F0',
                   }}
                 >
@@ -375,17 +389,18 @@ export default function TestPage() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>
         {/* Timer bar */}
         <div style={{
-          padding: '11px 20px', borderRadius: 12,
+          padding: isMobile ? '10px 14px' : '11px 20px', borderRadius: 12,
           background: '#fff',
           border: `1px solid ${isCriticalTime ? '#FECACA' : isLowTime ? '#FDE68A' : '#E3E7F0'}`,
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
+          gap: 10,
         }}>
-          <span style={{ fontSize: 13, color: '#6B7280', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '60%' }}>
+          <span style={{ fontSize: 13, color: '#6B7280', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: isMobile ? '40%' : '60%' }}>
             {course.title}
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 100 }}>
+            <div style={{ width: isMobile ? 60 : 100 }}>
               <div style={{ height: 5, borderRadius: 3, background: '#F0F3FA', overflow: 'hidden' }}>
                 <div style={{
                   height: '100%', borderRadius: 3,
@@ -414,7 +429,9 @@ export default function TestPage() {
 
         {/* Question card */}
         <div style={{
-          flex: 1, padding: '24px 28px', borderRadius: 14,
+          flex: 1,
+          padding: isMobile ? '16px 14px' : '24px 28px',
+          borderRadius: 14,
           background: '#fff', border: '1px solid #E3E7F0',
           display: 'flex', flexDirection: 'column',
           boxShadow: '0 1px 4px rgba(0,0,0,0.05)',
@@ -644,7 +661,10 @@ export default function TestPage() {
           zIndex: 200, backdropFilter: 'blur(4px)',
         }}>
           <div style={{
-            width: 400, padding: 32, borderRadius: 16,
+            width: '100%', maxWidth: 400,
+            padding: isMobile ? 22 : 32,
+            margin: isMobile ? '0 16px' : 0,
+            borderRadius: 16,
             background: '#fff', border: '1px solid #E3E7F0',
             boxShadow: '0 16px 48px rgba(0,0,0,0.14)',
           }}>

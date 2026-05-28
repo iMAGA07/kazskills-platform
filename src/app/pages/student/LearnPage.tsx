@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router';
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { useCourses, UserProgress } from '../../context/CoursesContext';
+import { useViewport } from '../../lib/useViewport';
 import {
   IcDocument, IcPresentation, IcDownload, IcClose,
   IcMaximize, IcMinimize, IcChevronLeft, IcChevronRight,
@@ -51,7 +52,10 @@ function TBtn({
 function PdfViewer({ url, title }: { url: string; title: string }) {
   const canvasRef    = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const scrollRef    = useRef<HTMLDivElement>(null);
   const renderTask   = useRef<any>(null);
+  const touchStartRef = useRef<{ x: number; y: number; t: number } | null>(null);
+  const { isMobile } = useViewport();
 
   const [pdfDoc,      setPdfDoc]      = useState<any>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -60,6 +64,7 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
   const [error,       setError]       = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [inputVal, setInputVal]       = useState('1');
+  const [hint, setHint] = useState(true); // first-time swipe hint on mobile
 
   // Sync input with currentPage
   useEffect(() => { setInputVal(String(currentPage)); }, [currentPage]);
@@ -122,6 +127,8 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
 
   const goPage = useCallback((delta: number) => {
     setCurrentPage(p => Math.max(1, Math.min(totalPages, p + delta)));
+    // After a successful navigation we can dismiss the swipe hint.
+    setHint(false);
   }, [totalPages]);
 
   useEffect(() => {
@@ -132,6 +139,32 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
     window.addEventListener('keydown', h);
     return () => window.removeEventListener('keydown', h);
   }, [goPage]);
+
+  // Touch swipe handlers — left/right swipe → next/prev page.
+  const onTouchStart = (e: React.TouchEvent) => {
+    const t = e.touches[0];
+    touchStartRef.current = { x: t.clientX, y: t.clientY, t: Date.now() };
+  };
+  const onTouchEnd = (e: React.TouchEvent) => {
+    const start = touchStartRef.current;
+    if (!start) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - start.x;
+    const dy = t.clientY - start.y;
+    const dt = Date.now() - start.t;
+    touchStartRef.current = null;
+    // Reasonable swipe heuristic: > 50px horizontal, mostly horizontal, < 600ms.
+    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.4 && dt < 600) {
+      goPage(dx > 0 ? -1 : 1);
+    }
+  };
+
+  // Auto-hide the hint after a few seconds.
+  useEffect(() => {
+    if (!isMobile || !hint) return;
+    const id = setTimeout(() => setHint(false), 3500);
+    return () => clearTimeout(id);
+  }, [isMobile, hint]);
 
   if (loading) return (
     <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 14, background: '#F8FAFD' }}>
@@ -159,40 +192,56 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
   return (
     <div ref={containerRef} style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: '#3A3A3C' }}>
 
-      {/* Toolbar */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '7px 12px', background: 'rgba(0,0,0,0.7)', flexShrink: 0 }}>
-        <TBtn onClick={() => goPage(-1)} disabled={currentPage <= 1} title="Предыдущая страница (←)">
-          <IcChevronLeft size={16} color="currentColor" />
-        </TBtn>
+      {/* Toolbar — compact on mobile (no page input/duplicate prev-next, just
+          Download + Fullscreen + truncated title). Desktop keeps full controls. */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: isMobile ? '8px 10px' : '7px 12px',
+        background: 'rgba(0,0,0,0.78)', flexShrink: 0,
+      }}>
+        {isMobile ? (
+          <>
+            <IcDocument size={15} color="rgba(255,255,255,0.85)" />
+            <span style={{
+              flex: 1, minWidth: 0,
+              fontSize: 12.5, color: 'rgba(255,255,255,0.9)',
+              fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+            }}>{title}</span>
+          </>
+        ) : (
+          <>
+            <TBtn onClick={() => goPage(-1)} disabled={currentPage <= 1} title="Предыдущая страница (←)">
+              <IcChevronLeft size={16} color="currentColor" />
+            </TBtn>
 
-        {/* Page input */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <input
-            type="number" value={inputVal} min={1} max={totalPages}
-            onChange={e => setInputVal(e.target.value)}
-            onBlur={() => {
-              const v = parseInt(inputVal);
-              if (!isNaN(v)) setCurrentPage(Math.max(1, Math.min(totalPages, v)));
-              else setInputVal(String(currentPage));
-            }}
-            onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
-            style={{
-              width: 44, padding: '4px 6px', borderRadius: 6,
-              border: '1px solid rgba(255,255,255,0.2)',
-              background: 'rgba(255,255,255,0.12)', color: '#fff',
-              fontSize: 13, textAlign: 'center', outline: 'none',
-            }}
-          />
-          <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)' }}>/ {totalPages}</span>
-        </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input
+                type="number" value={inputVal} min={1} max={totalPages}
+                onChange={e => setInputVal(e.target.value)}
+                onBlur={() => {
+                  const v = parseInt(inputVal);
+                  if (!isNaN(v)) setCurrentPage(Math.max(1, Math.min(totalPages, v)));
+                  else setInputVal(String(currentPage));
+                }}
+                onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+                style={{
+                  width: 44, padding: '4px 6px', borderRadius: 6,
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  background: 'rgba(255,255,255,0.12)', color: '#fff',
+                  fontSize: 13, textAlign: 'center', outline: 'none',
+                }}
+              />
+              <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)' }}>/ {totalPages}</span>
+            </div>
 
-        <TBtn onClick={() => goPage(+1)} disabled={currentPage >= totalPages} title="Следующая страница (→)">
-          <IcChevronRight size={16} color="currentColor" />
-        </TBtn>
+            <TBtn onClick={() => goPage(+1)} disabled={currentPage >= totalPages} title="Следующая страница (→)">
+              <IcChevronRight size={16} color="currentColor" />
+            </TBtn>
 
-        <div style={{ flex: 1 }} />
+            <div style={{ flex: 1 }} />
+          </>
+        )}
 
-        {/* Download */}
         <a href={url} download target="_blank" rel="noopener noreferrer"
           style={{ width: 34, height: 34, borderRadius: 7, background: 'rgba(255,255,255,0.14)', border: 'none', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', textDecoration: 'none', cursor: 'pointer' }}
           title="Скачать PDF"
@@ -200,33 +249,95 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
           <IcDownload size={16} color="#fff" />
         </a>
 
-        {/* Fullscreen */}
         <TBtn onClick={toggleFullscreen} title={isFullscreen ? 'Выйти из полноэкранного режима' : 'Полноэкранный режим'}>
           {isFullscreen ? <IcMinimize size={16} color="currentColor" /> : <IcMaximize size={16} color="currentColor" />}
         </TBtn>
       </div>
 
-      {/* Canvas */}
-      <div style={{ flex: 1, overflow: 'auto', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: 16, background: '#3A3A3C' }}>
-        <canvas ref={canvasRef} style={{ boxShadow: '0 4px 24px rgba(0,0,0,0.45)', background: '#fff', maxWidth: '100%' }} />
+      {/* Canvas — captures touch swipes for prev/next */}
+      <div
+        ref={scrollRef}
+        onTouchStart={onTouchStart}
+        onTouchEnd={onTouchEnd}
+        style={{
+          flex: 1, overflow: 'auto', display: 'flex',
+          justifyContent: 'center', alignItems: 'flex-start',
+          padding: isMobile ? 8 : 16, background: '#3A3A3C',
+          position: 'relative',
+          touchAction: 'pan-y',
+        }}
+      >
+        <canvas ref={canvasRef} style={{
+          boxShadow: '0 4px 24px rgba(0,0,0,0.45)',
+          background: '#fff', maxWidth: '100%', height: 'auto',
+        }} />
+
+        {/* First-time swipe hint on mobile */}
+        {isMobile && hint && totalPages > 1 && (
+          <div style={{
+            position: 'absolute', left: '50%', bottom: 18, transform: 'translateX(-50%)',
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '8px 14px', borderRadius: 999,
+            background: 'rgba(0,0,0,0.78)', color: '#fff',
+            fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap',
+            pointerEvents: 'none',
+          }}>
+            <span>← Свайп для перелистывания →</span>
+          </div>
+        )}
       </div>
 
-      {/* Bottom nav */}
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 14, padding: '9px 16px', background: 'rgba(0,0,0,0.55)', flexShrink: 0 }}>
+      {/* Bottom nav — larger tap targets on mobile, with the next-button
+          highlighted as the primary action */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        gap: isMobile ? 8 : 14,
+        padding: isMobile ? '10px 12px' : '9px 16px',
+        background: 'rgba(0,0,0,0.65)', flexShrink: 0,
+      }}>
         <button
           onClick={() => goPage(-1)} disabled={currentPage <= 1}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 20px', borderRadius: 8, border: 'none', background: currentPage <= 1 ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.18)', color: currentPage <= 1 ? 'rgba(255,255,255,0.25)' : '#fff', cursor: currentPage <= 1 ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 500 }}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: isMobile ? '12px 14px' : '9px 20px',
+            minWidth: isMobile ? 96 : undefined,
+            borderRadius: 10, border: 'none',
+            background: currentPage <= 1 ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.18)',
+            color: currentPage <= 1 ? 'rgba(255,255,255,0.25)' : '#fff',
+            cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
+            fontSize: isMobile ? 14 : 13, fontWeight: 600,
+            justifyContent: 'center',
+          }}
         >
-          <IcChevronLeft size={14} color="currentColor" /> Назад
+          <IcChevronLeft size={18} color="currentColor" />
+          {!isMobile && 'Назад'}
         </button>
-        <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', minWidth: 80, textAlign: 'center' }}>
-          {currentPage} из {totalPages}
-        </span>
+
+        <div style={{
+          padding: '6px 14px', borderRadius: 999,
+          background: 'rgba(255,255,255,0.1)',
+          color: '#fff', fontSize: 13, fontWeight: 600,
+          minWidth: 80, textAlign: 'center', flexShrink: 0,
+        }}>
+          {currentPage} / {totalPages}
+        </div>
+
         <button
           onClick={() => goPage(+1)} disabled={currentPage >= totalPages}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 20px', borderRadius: 8, border: 'none', background: currentPage >= totalPages ? 'rgba(255,255,255,0.08)' : BLUE, color: currentPage >= totalPages ? 'rgba(255,255,255,0.25)' : '#fff', cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer', fontSize: 13, fontWeight: 500 }}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: isMobile ? '12px 14px' : '9px 20px',
+            minWidth: isMobile ? 96 : undefined,
+            borderRadius: 10, border: 'none',
+            background: currentPage >= totalPages ? 'rgba(255,255,255,0.08)' : BLUE,
+            color: currentPage >= totalPages ? 'rgba(255,255,255,0.25)' : '#fff',
+            cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer',
+            fontSize: isMobile ? 14 : 13, fontWeight: 600,
+            justifyContent: 'center',
+          }}
         >
-          Вперёд <IcChevronRight size={14} color="currentColor" />
+          {!isMobile && 'Вперёд'}
+          <IcChevronRight size={18} color="currentColor" />
         </button>
       </div>
     </div>
