@@ -53,6 +53,7 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
   const canvasRef    = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const scrollRef    = useRef<HTMLDivElement>(null);
+  const stripRef     = useRef<HTMLDivElement>(null);
   const renderTask   = useRef<any>(null);
   const touchStartRef = useRef<{ x: number; y: number; t: number } | null>(null);
   const { isMobile } = useViewport();
@@ -65,6 +66,8 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [inputVal, setInputVal]       = useState('1');
   const [hint, setHint] = useState(true); // first-time swipe hint on mobile
+  const [thumbs, setThumbs] = useState<Record<number, string>>({});
+  const [viewportTick, setViewportTick] = useState(0); // bumped on resize to re-render
 
   // Sync input with currentPage
   useEffect(() => { setInputVal(String(currentPage)); }, [currentPage]);
@@ -92,38 +95,128 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
     return () => { cancelled = true; };
   }, [url]);
 
+  // Main canvas render — fits the page into the available viewport area
+  // (both width AND height) so the slide is never clipped vertically.
+  // Re-runs when viewportTick changes (resize / orientation / fullscreen).
   useEffect(() => {
-    if (!pdfDoc || !canvasRef.current) return;
+    if (!pdfDoc || !canvasRef.current || !scrollRef.current) return;
     let cancelled = false;
     if (renderTask.current) { renderTask.current.cancel(); renderTask.current = null; }
 
     pdfDoc.getPage(currentPage).then((page: any) => {
       if (cancelled) return;
-      const containerWidth = (containerRef.current?.clientWidth ?? 820) - 32;
+      const scrollEl = scrollRef.current;
+      if (!scrollEl) return;
+      // Available content area (minus padding on the scroll container).
+      const availW = scrollEl.clientWidth  - 16;
+      const availH = scrollEl.clientHeight - 16;
       const unscaled = page.getViewport({ scale: 1 });
-      const scale = Math.min(containerWidth / unscaled.width, 2.5);
-      const viewport = page.getViewport({ scale });
+      const fitScale = Math.min(availW / unscaled.width, availH / unscaled.height);
+      // Cap at 3x to keep zoomed-in renders sharp without exploding memory.
+      const cssScale = Math.max(0.3, Math.min(fitScale, 3));
+      const viewport = page.getViewport({ scale: cssScale });
+
+      // Render at devicePixelRatio for crispness on retina / mobile.
+      const dpr = window.devicePixelRatio || 1;
       const canvas = canvasRef.current!;
-      canvas.width  = viewport.width;
-      canvas.height = viewport.height;
-      const task = page.render({ canvasContext: canvas.getContext('2d')!, viewport });
+      canvas.width  = Math.floor(viewport.width  * dpr);
+      canvas.height = Math.floor(viewport.height * dpr);
+      canvas.style.width  = `${Math.floor(viewport.width)}px`;
+      canvas.style.height = `${Math.floor(viewport.height)}px`;
+
+      const ctx = canvas.getContext('2d')!;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      const task = page.render({ canvasContext: ctx, viewport });
       renderTask.current = task;
       task.promise.catch(() => {});
     });
 
     return () => { cancelled = true; };
-  }, [pdfDoc, currentPage]);
+  }, [pdfDoc, currentPage, viewportTick, isFullscreen]);
 
+  // Bump the tick on container resize so the page re-fits cleanly. ResizeObserver
+  // handles desktop drags and the iOS Safari address-bar collapse on scroll.
   useEffect(() => {
-    const h = () => setIsFullscreen(!!document.fullscreenElement);
+    if (!scrollRef.current) return;
+    let lastW = 0, lastH = 0;
+    const ro = new ResizeObserver(entries => {
+      const r = entries[0]?.contentRect;
+      if (!r) return;
+      // Avoid render thrash on tiny pixel deltas.
+      if (Math.abs(r.width - lastW) < 6 && Math.abs(r.height - lastH) < 6) return;
+      lastW = r.width; lastH = r.height;
+      setViewportTick(t => t + 1);
+    });
+    ro.observe(scrollRef.current);
+    const onOri = () => setViewportTick(t => t + 1);
+    window.addEventListener('orientationchange', onOri);
+    return () => { ro.disconnect(); window.removeEventListener('orientationchange', onOri); };
+  }, []);
+
+  // Render thumbnail strip once per loaded document (low scale, ~120px wide).
+  useEffect(() => {
+    if (!pdfDoc) return;
+    let cancelled = false;
+    const out: Record<number, string> = {};
+    (async () => {
+      for (let i = 1; i <= pdfDoc.numPages; i++) {
+        if (cancelled) return;
+        try {
+          const page = await pdfDoc.getPage(i);
+          const v0 = page.getViewport({ scale: 1 });
+          const targetW = 120;
+          const scale = targetW / v0.width;
+          const v = page.getViewport({ scale });
+          const c = document.createElement('canvas');
+          c.width = v.width; c.height = v.height;
+          await page.render({ canvasContext: c.getContext('2d')!, viewport: v }).promise;
+          out[i] = c.toDataURL('image/jpeg', 0.7);
+          if (cancelled) return;
+          // Update progressively so first thumbs appear before all are done.
+          if (i % 3 === 0 || i === pdfDoc.numPages) {
+            setThumbs({ ...out });
+          }
+        } catch { /* skip page */ }
+      }
+      if (!cancelled) setThumbs({ ...out });
+    })();
+    return () => { cancelled = true; };
+  }, [pdfDoc]);
+
+  // Keep the active thumbnail scrolled into view in the strip.
+  useEffect(() => {
+    if (!stripRef.current) return;
+    const el = stripRef.current.querySelector<HTMLElement>(`[data-thumb="${currentPage}"]`);
+    if (el) el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }, [currentPage]);
+
+  // Real fullscreen API may fail on iOS Safari; we fall back to a pseudo-
+  // fullscreen overlay via CSS so the button always works.
+  const toggleFullscreen = () => {
+    const el = containerRef.current;
+    if (!el) return;
+    if (!isFullscreen) {
+      if (el.requestFullscreen) {
+        el.requestFullscreen().then(() => setIsFullscreen(true)).catch(() => setIsFullscreen(true));
+      } else {
+        setIsFullscreen(true);
+      }
+    } else {
+      if (document.fullscreenElement && document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
+      setIsFullscreen(false);
+    }
+  };
+
+  // Stay in sync if the user exits the real fullscreen via ESC.
+  useEffect(() => {
+    const h = () => {
+      if (!document.fullscreenElement) setIsFullscreen(false);
+    };
     document.addEventListener('fullscreenchange', h);
     return () => document.removeEventListener('fullscreenchange', h);
   }, []);
-
-  const toggleFullscreen = () => {
-    if (!document.fullscreenElement) containerRef.current?.requestFullscreen();
-    else document.exitFullscreen();
-  };
 
   const goPage = useCallback((delta: number) => {
     setCurrentPage(p => Math.max(1, Math.min(totalPages, p + delta)));
@@ -189,8 +282,20 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
     </div>
   );
 
+  // When pseudo-fullscreen, cover the whole viewport. The real Fullscreen API
+  // does this automatically; this branch is just for iOS Safari where the API
+  // is unavailable on non-video elements.
+  const containerStyle: React.CSSProperties = isFullscreen
+    ? {
+        position: 'fixed', inset: 0, zIndex: 9999,
+        width: '100vw', height: '100dvh' as any,
+        background: '#1A1A1C',
+        display: 'flex', flexDirection: 'column',
+      }
+    : { width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: '#3A3A3C' };
+
   return (
-    <div ref={containerRef} style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', background: '#3A3A3C' }}>
+    <div ref={containerRef} style={containerStyle}>
 
       {/* Toolbar — compact on mobile (no page input/duplicate prev-next, just
           Download + Fullscreen + truncated title). Desktop keeps full controls. */}
@@ -254,28 +359,32 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
         </TBtn>
       </div>
 
-      {/* Canvas — captures touch swipes for prev/next */}
+      {/* Canvas — captures touch swipes for prev/next. Centered both axes so
+          a page that's narrower or shorter than the viewport sits in the middle
+          instead of pinning to the top with a big grey gap below. */}
       <div
         ref={scrollRef}
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
         style={{
-          flex: 1, overflow: 'auto', display: 'flex',
-          justifyContent: 'center', alignItems: 'flex-start',
-          padding: isMobile ? 8 : 16, background: '#3A3A3C',
+          flex: 1, overflow: 'hidden', display: 'flex',
+          justifyContent: 'center', alignItems: 'center',
+          padding: 8,
+          background: '#1A1A1C',
           position: 'relative',
           touchAction: 'pan-y',
         }}
       >
         <canvas ref={canvasRef} style={{
-          boxShadow: '0 4px 24px rgba(0,0,0,0.45)',
-          background: '#fff', maxWidth: '100%', height: 'auto',
+          boxShadow: '0 6px 28px rgba(0,0,0,0.55)',
+          background: '#fff', borderRadius: 2,
+          display: 'block',
         }} />
 
         {/* First-time swipe hint on mobile */}
         {isMobile && hint && totalPages > 1 && (
           <div style={{
-            position: 'absolute', left: '50%', bottom: 18, transform: 'translateX(-50%)',
+            position: 'absolute', left: '50%', bottom: 14, transform: 'translateX(-50%)',
             display: 'flex', alignItems: 'center', gap: 8,
             padding: '8px 14px', borderRadius: 999,
             background: 'rgba(0,0,0,0.78)', color: '#fff',
@@ -286,6 +395,63 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
           </div>
         )}
       </div>
+
+      {/* Thumbnail strip — tap on any thumb to jump straight to that page. */}
+      {totalPages > 1 && (
+        <div
+          ref={stripRef}
+          style={{
+            display: 'flex', gap: 8,
+            padding: '8px 10px',
+            background: 'rgba(0,0,0,0.78)',
+            overflowX: 'auto',
+            overflowY: 'hidden',
+            flexShrink: 0,
+            scrollbarWidth: 'none' as const,
+          }}
+        >
+          {Array.from({ length: totalPages }, (_, i) => i + 1).map(n => {
+            const active = n === currentPage;
+            const src = thumbs[n];
+            return (
+              <button
+                key={n}
+                data-thumb={n}
+                onClick={() => setCurrentPage(n)}
+                style={{
+                  position: 'relative', flexShrink: 0,
+                  width: isMobile ? 56 : 72, height: isMobile ? 74 : 96,
+                  borderRadius: 6, padding: 0,
+                  background: '#0F1117',
+                  border: active ? '2px solid #2B5CE6' : '1.5px solid rgba(255,255,255,0.12)',
+                  boxShadow: active ? '0 0 0 3px rgba(43,92,230,0.25)' : 'none',
+                  cursor: 'pointer', overflow: 'hidden',
+                  transition: 'border-color 0.15s',
+                }}
+                title={`Страница ${n}`}
+              >
+                {src ? (
+                  <img src={src} alt={`p${n}`} style={{
+                    width: '100%', height: '100%', objectFit: 'cover', display: 'block',
+                  }} />
+                ) : (
+                  <div style={{
+                    width: '100%', height: '100%',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    color: 'rgba(255,255,255,0.4)', fontSize: 11,
+                  }}>...</div>
+                )}
+                <span style={{
+                  position: 'absolute', bottom: 2, left: 2,
+                  padding: '1px 5px', borderRadius: 4,
+                  background: active ? '#2B5CE6' : 'rgba(0,0,0,0.72)',
+                  color: '#fff', fontSize: 10, fontWeight: 700,
+                }}>{n}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
 
       {/* Bottom nav — larger tap targets on mobile, with the next-button
           highlighted as the primary action */}
@@ -506,7 +672,13 @@ export default function LearnPage() {
   const isPdf = lesson.type === 'pdf' || ext === 'pdf';
 
   return (
-    <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', flexDirection: 'column', height: 'calc(100vh - 128px)' }}>
+    <div style={{
+      maxWidth: 1200, margin: '0 auto', display: 'flex', flexDirection: 'column',
+      // 100dvh follows the visible viewport on iOS Safari (collapsing address bar),
+      // 100vh is the fallback for older browsers.
+      height: 'calc(100dvh - 168px)' as any,
+      minHeight: 'calc(100vh - 168px)',
+    }}>
 
       {/* Breadcrumb + actions */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, paddingBottom: 12, borderBottom: `1px solid ${BORDER}` }}>
