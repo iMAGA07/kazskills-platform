@@ -238,26 +238,26 @@ export function AppLayout() {
               </button>
             )}
 
-            {/* Avatar with dropdown */}
+            {/* Avatar with dropdown — shows the user's uploaded photo if any,
+                otherwise the first letter of their name on a gradient. */}
             <div style={{ position: 'relative' }}>
               <div
                 onClick={() => setShowProfileMenu(v => !v)}
                 style={{
-                  width: 36,
-                  height: 36,
-                  borderRadius: '9px',
-                  background: 'linear-gradient(135deg, #2B5CE6, #5B4EF0)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '14px',
-                  fontWeight: 700,
-                  color: '#fff',
-                  cursor: 'pointer',
-                  flexShrink: 0,
+                  width: 36, height: 36, borderRadius: '9px',
+                  background: user.avatar
+                    ? '#fff'
+                    : 'linear-gradient(135deg, #2B5CE6, #5B4EF0)',
+                  border: user.avatar ? '1.5px solid #BFDBFE' : 'none',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontSize: '14px', fontWeight: 700, color: '#fff',
+                  cursor: 'pointer', flexShrink: 0, overflow: 'hidden',
                 }}
               >
-                {user.name.charAt(0)}
+                {user.avatar
+                  ? <img src={user.avatar} alt={user.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  : user.name.charAt(0)
+                }
               </div>
 
               {/* Profile dropdown */}

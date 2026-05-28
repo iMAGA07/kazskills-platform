@@ -717,6 +717,7 @@ export default function AdminUsersPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [editUser, setEditUser] = useState<ManagedUser | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ManagedUser | null>(null);
+  const [previewUser, setPreviewUser] = useState<ManagedUser | null>(null);
 
   // unique organizations
   const organizations = useMemo(() => {
@@ -960,16 +961,32 @@ export default function AdminUsersPage() {
               onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = '#FAFBFF'}
               onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = 'transparent'}
             >
-              {/* User info */}
+              {/* User info — clickable avatar opens the photo preview if one exists */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '11px', minWidth: 0 }}>
-                <div style={{
-                  width: 38, height: 38, borderRadius: '50%', flexShrink: 0,
-                  background: `linear-gradient(135deg, ${c1}, ${c2})`,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: '14px', fontWeight: 700, color: '#fff',
-                }}>
-                  {u.name.charAt(0)}
-                </div>
+                {u.avatar ? (
+                  <button
+                    onClick={() => setPreviewUser(u)}
+                    title="Открыть фото"
+                    style={{
+                      width: 42, height: 42, borderRadius: '50%', flexShrink: 0,
+                      padding: 0, border: '2px solid #BFDBFE', background: '#fff',
+                      cursor: 'pointer', overflow: 'hidden',
+                    }}
+                  >
+                    <img src={u.avatar} alt={u.name} style={{
+                      width: '100%', height: '100%', objectFit: 'cover', display: 'block',
+                    }} />
+                  </button>
+                ) : (
+                  <div style={{
+                    width: 38, height: 38, borderRadius: '50%', flexShrink: 0,
+                    background: `linear-gradient(135deg, ${c1}, ${c2})`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: '14px', fontWeight: 700, color: '#fff',
+                  }}>
+                    {u.name.charAt(0)}
+                  </div>
+                )}
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: '13.5px', fontWeight: 500, color: '#0F1629', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {u.name}
@@ -1068,6 +1085,111 @@ export default function AdminUsersPage() {
           />
         )}
       </Modal>
+
+      {/* Photo preview modal — view the full-size shot a student uploaded
+          after passing an exam, and download it as a file for the printed
+          certificate or HR records. */}
+      {previewUser?.avatar && (
+        <PhotoPreviewModal user={previewUser} onClose={() => setPreviewUser(null)} />
+      )}
+    </div>
+  );
+}
+
+// ─── Photo preview modal ──────────────────────────────────────────────────────
+function PhotoPreviewModal({ user, onClose }: { user: ManagedUser; onClose: () => void }) {
+  const [downloading, setDownloading] = useState(false);
+
+  const ext = (() => {
+    const m = (user.avatar || '').match(/\.(jpg|jpeg|png|webp|gif)(\?|$)/i);
+    return m ? m[1].toLowerCase() : 'jpg';
+  })();
+  // ASCII-safe filename: ФИО transliterated would be ideal but simplest is
+  // to just take the user id and ext — admins know who's who from the list.
+  const safeName = user.name.replace(/[^a-zA-Zа-яА-Я0-9_-]+/g, '_').slice(0, 60);
+  const downloadName = `${safeName || user.id}.${ext}`;
+
+  const downloadFile = async () => {
+    if (!user.avatar) return;
+    setDownloading(true);
+    try {
+      // Fetch as blob so we get a real save dialog (cross-origin direct <a download>
+      // sometimes opens the image instead of saving).
+      const res = await fetch(user.avatar);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = downloadName;
+      document.body.appendChild(a); a.click(); a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      // Fallback: open in a new tab so the user can save manually.
+      window.open(user.avatar!, '_blank');
+    } finally {
+      setDownloading(false);
+    }
+  };
+
+  return (
+    <div onClick={onClose} style={{
+      position: 'fixed', inset: 0, zIndex: 2000,
+      background: 'rgba(15,22,41,0.78)',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: 20,
+    }}>
+      <div onClick={e => e.stopPropagation()} style={{
+        background: '#fff', borderRadius: 14, width: '100%', maxWidth: 520,
+        boxShadow: '0 20px 60px rgba(0,0,0,0.35)',
+        display: 'flex', flexDirection: 'column',
+      }}>
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid #EEF1F8', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#0F1629', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {user.name}
+            </div>
+            <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>
+              {user.organization}{user.position ? ` · ${user.position}` : ''}
+            </div>
+          </div>
+          <button onClick={onClose} style={{
+            width: 32, height: 32, borderRadius: 8, border: '1px solid #E3E7F0',
+            background: '#fff', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <IcClose size={14} color="#6B7280" />
+          </button>
+        </div>
+
+        <div style={{ padding: 20, display: 'flex', justifyContent: 'center', background: '#F4F6FB' }}>
+          <img src={user.avatar} alt={user.name} style={{
+            maxWidth: '100%', maxHeight: '60vh', borderRadius: 10,
+            objectFit: 'contain', background: '#fff',
+            boxShadow: '0 4px 16px rgba(15,22,41,0.12)',
+          }} />
+        </div>
+
+        <div style={{ padding: '14px 20px', borderTop: '1px solid #EEF1F8', display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+          <button onClick={onClose} style={{
+            padding: '9px 16px', borderRadius: 8, border: '1.5px solid #E3E7F0',
+            background: '#fff', color: '#374151', fontSize: 13, fontWeight: 500, cursor: 'pointer',
+          }}>
+            Закрыть
+          </button>
+          <button onClick={downloadFile} disabled={downloading} style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '9px 16px', borderRadius: 8, border: 'none',
+            background: downloading ? '#9CA3AF' : '#2B5CE6', color: '#fff',
+            fontSize: 13, fontWeight: 600, cursor: downloading ? 'not-allowed' : 'pointer',
+          }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="7 10 12 15 17 10"/>
+              <line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            {downloading ? 'Скачивание…' : 'Скачать'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

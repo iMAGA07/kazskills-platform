@@ -1,11 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { useUsers } from '../../context/UsersContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { useCourses, UserProgress } from '../../context/CoursesContext';
 import {
   IcPerson, IcMail, IcPhone, IcBuilding, IcBriefcase,
-  IcShield, IcSave, IcCheckCircle, IcMedal, IcBook, IcClock
+  IcShield, IcSave, IcCheckCircle, IcMedal, IcBook, IcClock, IcCamera
 } from '../../components/Icons';
+import { PhotoCaptureModal } from '../../components/shared/PhotoCaptureModal';
 
 const inp: React.CSSProperties = {
   width: '100%', padding: '10px 13px', borderRadius: '8px',
@@ -16,11 +18,13 @@ const inp: React.CSSProperties = {
 
 export default function ProfilePage() {
   const { user, updateUser } = useAuth();
+  const { updateUser: updateServerUser } = useUsers();
   const { t } = useLanguage();
   const { courses, getProgress } = useCourses();
   const [form, setForm] = useState({ name: user?.name ?? '', phone: user?.phone ?? '', department: user?.department ?? '', position: user?.position ?? '' });
   const [saved, setSaved] = useState(false);
   const [progressList, setProgressList] = useState<UserProgress[]>([]);
+  const [photoOpen, setPhotoOpen] = useState(false);
 
   useEffect(() => {
     if (!user || courses.length === 0) return;
@@ -71,14 +75,32 @@ export default function ProfilePage() {
             boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
             display: 'flex', alignItems: 'center', gap: '20px',
           }}>
-            <div style={{
-              width: 76, height: 76, borderRadius: '50%',
-              background: 'linear-gradient(135deg, #2B5CE6, #5B4EF0)',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontSize: '28px', fontWeight: 700, color: '#fff', flexShrink: 0,
-            }}>
-              {user.name.charAt(0)}
-            </div>
+            <button
+              onClick={() => setPhotoOpen(true)}
+              title={user.avatar ? 'Заменить фото' : 'Добавить фото'}
+              style={{
+                position: 'relative', width: 76, height: 76, borderRadius: '50%',
+                background: user.avatar ? '#fff' : 'linear-gradient(135deg, #2B5CE6, #5B4EF0)',
+                border: user.avatar ? '2px solid #BFDBFE' : 'none',
+                padding: 0, cursor: 'pointer', overflow: 'hidden',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                color: '#fff', fontSize: '28px', fontWeight: 700, flexShrink: 0,
+              }}
+            >
+              {user.avatar
+                ? <img src={user.avatar} alt={user.name} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : user.name.charAt(0)
+              }
+              <span style={{
+                position: 'absolute', right: -2, bottom: -2,
+                width: 26, height: 26, borderRadius: '50%',
+                background: '#2B5CE6', border: '2.5px solid #fff',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
+              }}>
+                <IcCamera size={12} color="#fff" />
+              </span>
+            </button>
             <div>
               <h3 style={{ margin: '0 0 3px', color: '#0F1629' }}>{(() => { const p = user.name.trim().split(/\s+/); return p.length >= 3 ? `${p[0]} ${p[1]}` : user.name; })()}</h3>
               <p style={{ margin: '0 0 10px', color: '#6B7280', fontSize: '13.5px' }}>{user.email}</p>
@@ -256,6 +278,17 @@ export default function ProfilePage() {
           </div>
         </div>
       </div>
+
+      <PhotoCaptureModal
+        open={photoOpen}
+        onClose={() => setPhotoOpen(false)}
+        onSaved={(url) => {
+          updateUser({ avatar: url });
+          updateServerUser(user.id, { avatar: url });
+        }}
+        title={user.avatar ? 'Заменить фото' : 'Фото профиля'}
+        hint="Используется на ваших сертификатах."
+      />
     </div>
   );
 }
