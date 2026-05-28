@@ -64,6 +64,26 @@ export default function CoursesPage() {
   return (
     <div style={{ maxWidth: 960, margin: '0 auto' }}>
 
+      {/* Welcome banner */}
+      {user && (
+        <div style={{
+          marginBottom: '20px', padding: '18px 22px',
+          borderRadius: 14,
+          background: 'linear-gradient(135deg, #EBF1FE 0%, #F4F7FF 100%)',
+          border: `1px solid #D6E0FF`,
+        }}>
+          <p style={{ margin: '0 0 4px', fontSize: '11.5px', fontWeight: 700, color: BLUE, letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+            Добро пожаловать
+          </p>
+          <h2 style={{ margin: '0 0 4px', fontSize: '22px', fontWeight: 700, color: NAVY, lineHeight: 1.2 }}>
+            {user.name}!
+          </h2>
+          <p style={{ margin: 0, fontSize: '13.5px', color: '#4B5563' }}>
+            Платформа онлайн-обучения KAZSKILLS. Ниже — назначенные вам курсы.
+          </p>
+        </div>
+      )}
+
       {/* Simple header */}
       <div style={{ marginBottom: '24px' }}>
         <h1 style={{ margin: '0 0 8px', fontSize: '24px', fontWeight: 700, color: '#0F1629' }}>

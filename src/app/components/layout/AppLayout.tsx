@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { Outlet, Navigate, useNavigate, useLocation } from 'react-router';
 import { LanguageSwitcher } from '../shared/LanguageSwitcher';
 import { useAuth } from '../../context/AuthContext';
+import { useUsers } from '../../context/UsersContext';
 import { IcBook, IcFileText, IcBell, IcCamera, IcLogout } from '../Icons';
 import { useLanguage } from '../../context/LanguageContext';
 import { getOrganizationName, getCurrentOrganization, useOrganizations } from '../../lib/organization';
+import { PhotoCaptureModal } from '../shared/PhotoCaptureModal';
 
 // Logo component — uses the tenant org logo on subdomains, KAZSKILLS on the root.
 // Click → user's home page (role-aware).
@@ -81,11 +83,13 @@ const Logo = () => {
 };
 
 export function AppLayout() {
-  const { user, logout } = useAuth();
+  const { user, logout, updateUser: updateLocalUser } = useAuth();
+  const { updateUser: updateServerUser } = useUsers();
   const { t } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [photoOpen, setPhotoOpen] = useState(false);
   const orgName = getOrganizationName();
 
   if (!user) return <Navigate to="/login" replace />;
@@ -331,7 +335,7 @@ export function AppLayout() {
                       <button
                         onClick={() => {
                           setShowProfileMenu(false);
-                          // Handle photo upload
+                          setPhotoOpen(true);
                         }}
                         style={{
                           width: '100%',
@@ -405,6 +409,17 @@ export function AppLayout() {
         <BackBar />
         <Outlet />
       </main>
+
+      <PhotoCaptureModal
+        open={photoOpen}
+        onClose={() => setPhotoOpen(false)}
+        onSaved={(url) => {
+          updateLocalUser({ avatar: url });
+          if (user) updateServerUser(user.id, { avatar: url });
+        }}
+        title="Фото профиля"
+        hint="Используется на ваших сертификатах."
+      />
     </div>
   );
 }

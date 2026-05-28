@@ -1,17 +1,34 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router';
 import { useAuth } from '../../context/AuthContext';
+import { useUsers } from '../../context/UsersContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { useCourses } from '../../context/CoursesContext';
-import { IcCheckCircle, IcXCircle, IcMedal, IcRefresh, IcArrowLeft, IcTimer, IcTarget, IcTrendingUp, IcAlarm } from '../../components/Icons';
+import { IcCheckCircle, IcXCircle, IcMedal, IcRefresh, IcArrowLeft, IcTimer, IcTarget, IcTrendingUp, IcAlarm, IcCamera } from '../../components/Icons';
+import { PhotoCaptureModal } from '../../components/shared/PhotoCaptureModal';
 
 export default function ResultsPage() {
   const { courseId } = useParams<{ courseId: string }>();
-  const { user } = useAuth();
+  const { user, updateUser: updateLocalUser } = useAuth();
+  const { updateUser: updateServerUser } = useUsers();
   const { t } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
   const { getCourse } = useCourses();
+  const [photoOpen, setPhotoOpen] = useState(false);
+
+  // After a successful test the student is invited to add a photo to their
+  // certificate (skippable). We only auto-open if there is no avatar yet.
+  useEffect(() => {
+    if (user && location.state?.passed && !user.avatar) {
+      setPhotoOpen(true);
+    }
+  }, [user, location.state]);
+
+  const onPhotoSaved = (url: string) => {
+    updateLocalUser({ avatar: url });
+    if (user) updateServerUser(user.id, { avatar: url });
+  };
 
   const course = courseId ? getCourse(courseId) : undefined;
   const state = location.state as { score: number; passed: boolean; timeSpent: number; autoSubmit?: boolean } | null;
@@ -123,6 +140,47 @@ export default function ResultsPage() {
         </div>
       </div>
 
+      {/* Photo CTA for the certificate (only shown after passing) */}
+      {passed && (
+        <div style={{
+          marginBottom: 16, padding: '16px 18px', borderRadius: 12,
+          background: '#F4F8FF', border: '1px solid #BFDBFE',
+          display: 'flex', alignItems: 'center', gap: 14,
+        }}>
+          {user?.avatar ? (
+            <img src={user.avatar} alt="Ваше фото" style={{
+              width: 56, height: 56, borderRadius: '50%', objectFit: 'cover',
+              border: '2px solid #fff', boxShadow: '0 2px 6px rgba(0,0,0,0.15)',
+            }} />
+          ) : (
+            <div style={{
+              width: 56, height: 56, borderRadius: '50%',
+              background: '#EBF1FE', border: '2px dashed #BFDBFE',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              <IcCamera size={22} color="#2B5CE6" />
+            </div>
+          )}
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 600, color: '#1B3D84' }}>
+              {user?.avatar ? 'Фото для сертификата сохранено' : 'Сделайте фото для сертификата'}
+            </div>
+            <div style={{ fontSize: 12, color: '#4B5563', marginTop: 2, lineHeight: 1.4 }}>
+              Снимок с камеры платформы или загрузка готовой фотографии — она появится на вашем сертификате.
+            </div>
+          </div>
+          <button onClick={() => setPhotoOpen(true)} style={{
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '9px 16px', borderRadius: 8, border: 'none',
+            background: '#2B5CE6', color: '#fff', cursor: 'pointer',
+            fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
+          }}>
+            <IcCamera size={14} color="#fff" />
+            {user?.avatar ? 'Заменить' : 'Сделать фото'}
+          </button>
+        </div>
+      )}
+
       {/* Actions */}
       <div style={{ display: 'flex', gap: '12px' }}>
         {passed
@@ -166,6 +224,14 @@ export default function ResultsPage() {
           {t('results.back_to_course')}
         </button>
       </div>
+
+      <PhotoCaptureModal
+        open={photoOpen}
+        onClose={() => setPhotoOpen(false)}
+        onSaved={onPhotoSaved}
+        title="Фото для сертификата"
+        hint="Снимите фото лица через камеру или загрузите готовую фотографию. Она появится на вашем сертификате."
+      />
     </div>
   );
 }

@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router';
 import {
   IcCamera as Camera, IcCameraOff as CameraOff, IcWarning as AlertTriangle, IcTimer as Timer,
   IcChevronLeft as ChevronLeft, IcChevronRight as ChevronRight,
-  IcCheckCircle as CheckCircle2, IcArrowRight as Send, IcYoutube as Video, IcWarning as AlertCircle,
+  IcCheckCircle as CheckCircle2, IcArrowRight as Send, IcWarning as AlertCircle,
   IcRocket, IcSettings,
 } from '../../components/Icons';
 import { useAuth } from '../../context/AuthContext';
@@ -29,6 +29,10 @@ export default function TestPage() {
     if (!isAdmin && !isEnrolled) navigate('/student/courses', { replace: true });
   }, [course, user, isAdmin, isEnrolled, navigate]);
 
+  // Hidden offscreen <video> element — we still acquire the camera so the
+  // "your session is being recorded" warning is true, but the student never
+  // sees their own face during the test (asked for explicitly: visible self-
+  // view was distracting).
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const handleSubmitRef = useRef<(autoSubmit?: boolean) => Promise<void>>(async () => {});
@@ -60,12 +64,11 @@ export default function TestPage() {
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
       streamRef.current = stream;
       setCameraState('granted');
-      // srcObject is assigned after the video element mounts (see useEffect below)
     } catch { setCameraState('denied'); }
   };
 
-  // Attach the camera stream to the <video> element every time cameraState
-  // changes to 'granted' or when testStarted flips (the video re-mounts).
+  // Attach the camera stream to the hidden <video> element so the browser keeps
+  // it active. The element itself is rendered with display:none below.
   useEffect(() => {
     if (!streamRef.current) return;
     if (videoRef.current && !videoRef.current.srcObject) {
@@ -204,28 +207,35 @@ export default function TestPage() {
               </>
             )}
 
-            {/* GRANTED */}
+            {/* GRANTED — no self-view, just a confirmation. The stream is alive
+                 in a hidden <video> rendered at the bottom of this component. */}
             {cameraState === 'granted' && (
               <>
                 <div style={{
-                  width: '100%', aspectRatio: '16/9', borderRadius: 12,
-                  background: '#000', overflow: 'hidden', marginBottom: 20,
-                  border: '2px solid #A7F3D0', position: 'relative',
+                  width: 80, height: 80, borderRadius: '50%',
+                  background: '#ECFDF5', border: '2px solid #A7F3D0',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  margin: '0 auto 18px', position: 'relative',
                 }}>
-                  <video ref={videoRef} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  <div style={{
-                    position: 'absolute', bottom: 10, left: 10,
-                    display: 'flex', alignItems: 'center', gap: 6,
-                    padding: '4px 10px', borderRadius: 20,
-                    background: 'rgba(0,0,0,0.7)',
-                  }}>
-                    <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#059669', display: 'inline-block' }} />
-                    <span style={{ fontSize: 11, color: '#34D399', fontWeight: 600 }}>{t('test.camera_monitoring')}</span>
-                  </div>
+                  <Camera size={32} color="#059669" />
+                  {/* recording dot */}
+                  <span style={{
+                    position: 'absolute', top: 4, right: 4,
+                    width: 12, height: 12, borderRadius: '50%',
+                    background: '#DC2626',
+                    boxShadow: '0 0 0 4px rgba(220,38,38,0.18)',
+                    animation: 'pulse 1.4s ease-in-out infinite',
+                  }} />
                 </div>
-                <h2 style={{ textAlign: 'center', margin: '0 0 8px', color: '#0F1629', fontSize: 18 }}>Камера активна. Готовы начать?</h2>
-                <p style={{ textAlign: 'center', color: '#6B7280', fontSize: 13, margin: '0 0 24px' }}>
+                <style>{`@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.45} }`}</style>
+                <h2 style={{ textAlign: 'center', margin: '0 0 8px', color: '#0F1629', fontSize: 18 }}>
+                  Камера активна — запись ведётся
+                </h2>
+                <p style={{ textAlign: 'center', color: '#6B7280', fontSize: 13, margin: '0 0 6px', lineHeight: 1.55 }}>
                   Тест: <strong style={{ color: '#0F1629' }}>{course.title}</strong>
+                </p>
+                <p style={{ textAlign: 'center', color: '#9CA3AF', fontSize: 12, margin: '0 0 24px', lineHeight: 1.55 }}>
+                  Видеопревью не отображается, чтобы не отвлекать. Камера работает в фоне.
                 </p>
                 <button
                   onClick={() => setTestStarted(true)}
@@ -325,22 +335,33 @@ export default function TestPage() {
           </div>
         </div>
 
-        {/* Camera thumbnail */}
+        {/* Recording indicator — no self-view, just a chip showing the camera
+            is on. The hidden <video> tag keeps the stream alive (rendered at
+            the bottom of this component, display:none). */}
         <div style={{ padding: 12, borderTop: '1px solid #F0F3FA' }}>
-          <div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 4 }}>
-            <Video size={11} color="#059669" />
-            {t('test.camera_monitoring')}
-          </div>
           <div style={{
-            width: '100%', aspectRatio: '16/9', borderRadius: 7,
-            background: '#000', overflow: 'hidden',
-            border: '1px solid #A7F3D0', position: 'relative',
+            display: 'flex', alignItems: 'center', gap: 8,
+            padding: '8px 10px', borderRadius: 8,
+            background: '#FEF2F2', border: '1px solid #FECACA',
           }}>
-            <video ref={videoRef} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            <div style={{ position: 'absolute', top: 4, right: 4, width: 8, height: 8, borderRadius: '50%', background: '#059669' }} />
+            <span style={{
+              width: 9, height: 9, borderRadius: '50%',
+              background: '#DC2626',
+              boxShadow: '0 0 0 3px rgba(220,38,38,0.18)',
+              animation: 'pulse 1.4s ease-in-out infinite',
+              flexShrink: 0,
+            }} />
+            <div style={{ fontSize: 11.5, color: '#991B1B', lineHeight: 1.35 }}>
+              <div style={{ fontWeight: 700 }}>Запись ведётся</div>
+              <div style={{ opacity: 0.85, marginTop: 1 }}>{t('test.camera_monitoring')}</div>
+            </div>
           </div>
         </div>
       </div>
+
+      {/* Hidden video element — keeps the camera stream attached without
+          showing the self-view. Rendered offscreen with display:none. */}
+      <video ref={videoRef} autoPlay playsInline muted style={{ display: 'none' }} />
 
       {/* Center: Question */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 14, minWidth: 0 }}>

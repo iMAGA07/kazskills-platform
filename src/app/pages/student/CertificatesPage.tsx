@@ -4,8 +4,10 @@ import { useLanguage } from '../../context/LanguageContext';
 import { useCourses } from '../../context/CoursesContext';
 import { Logo } from '../../components/shared/Logo';
 import {
-  IcMedal, IcDownload, IcEye, IcClose, IcCheckCircle, IcShield, IcClock,
+  IcMedal, IcDownload, IcEye, IcClose, IcCheckCircle, IcShield, IcClock, IcCamera,
 } from '../../components/Icons';
+import { useUsers } from '../../context/UsersContext';
+import { PhotoCaptureModal } from '../../components/shared/PhotoCaptureModal';
 
 const NAVY   = '#1B3D84';
 const BLUE   = '#2B5CE6';
@@ -33,12 +35,14 @@ function ScoreBadge({ score }: { score: number }) {
 }
 
 export default function CertificatesPage() {
-  const { user } = useAuth();
+  const { user, updateUser: updateLocalUser } = useAuth();
+  const { updateUser: updateServerUser } = useUsers();
   const { t } = useLanguage();
   const { courses, getProgress } = useCourses();
   const [viewCert, setViewCert] = useState<CertData | null>(null);
   const [certs, setCerts] = useState<CertData[]>([]);
   const [loading, setLoading] = useState(true);
+  const [photoOpen, setPhotoOpen] = useState(false);
 
   useEffect(() => {
     if (!user || courses.length === 0) { setLoading(false); return; }
@@ -265,8 +269,38 @@ export default function CertificatesPage() {
           onClick={() => setViewCert(null)}
         >
           <div style={{ maxWidth: 660, width: '100%' }} onClick={e => e.stopPropagation()}>
-            {/* Close */}
-            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '12px' }}>
+            {/* Toolbar */}
+            <div className="certificate-toolbar" style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
+              gap: 8, marginBottom: '12px',
+            }}>
+              {!user.avatar && (
+                <button
+                  onClick={() => setPhotoOpen(true)}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                    padding: '8px 14px', borderRadius: 999,
+                    background: 'rgba(255,255,255,0.92)', border: '1px solid rgba(255,255,255,0.4)',
+                    color: '#1B3D84', cursor: 'pointer', fontSize: 12.5, fontWeight: 600,
+                  }}
+                  title="Без фото сертификат будет напечатан без портрета"
+                >
+                  <IcCamera size={13} color="#2B5CE6" />
+                  Добавить фото
+                </button>
+              )}
+              <button
+                onClick={() => window.print()}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 6,
+                  padding: '8px 14px', borderRadius: 999,
+                  background: '#fff', border: '1px solid rgba(255,255,255,0.4)',
+                  color: '#1B3D84', cursor: 'pointer', fontSize: 12.5, fontWeight: 600,
+                }}
+              >
+                <IcDownload size={13} color="#2B5CE6" />
+                Распечатать
+              </button>
               <button
                 onClick={() => setViewCert(null)}
                 style={{
@@ -308,7 +342,7 @@ export default function CertificatesPage() {
                 ))}
 
                 {/* Content */}
-                <div style={{ textAlign: 'center' }}>
+                <div className="certificate-printable" style={{ textAlign: 'center' }}>
                   {/* Logo */}
                   <div style={{ marginBottom: '20px' }}>
                     <Logo size="sm" variant="full" onDark={false} />
@@ -323,6 +357,22 @@ export default function CertificatesPage() {
                   }}>
                     СЕРТИФИКАТ О ПРОХОЖДЕНИИ КУРСА
                   </div>
+
+                  {/* Student photo */}
+                  {user.avatar && (
+                    <div style={{ marginBottom: '14px' }}>
+                      <img
+                        src={user.avatar}
+                        alt={user.name}
+                        style={{
+                          width: 96, height: 96, borderRadius: '50%',
+                          objectFit: 'cover',
+                          border: `3px solid ${GOLD}`,
+                          boxShadow: '0 4px 12px rgba(217,119,6,0.25)',
+                        }}
+                      />
+                    </div>
+                  )}
 
                   <p style={{ color: MUTED, fontSize: '13px', margin: '0 0 6px' }}>
                     настоящим подтверждает, что
@@ -385,6 +435,33 @@ export default function CertificatesPage() {
           </div>
         </div>
       )}
+
+      <PhotoCaptureModal
+        open={photoOpen}
+        onClose={() => setPhotoOpen(false)}
+        onSaved={(url) => {
+          updateLocalUser({ avatar: url });
+          if (user) updateServerUser(user.id, { avatar: url });
+        }}
+        title="Фото для сертификата"
+        hint="Сделайте снимок камерой или загрузите готовую фотографию."
+      />
+
+      {/* Print stylesheet: when the user hits "Распечатать", hide every page
+          element except the certificate body itself. */}
+      <style>{`
+        @media print {
+          body { background: #fff !important; }
+          body * { visibility: hidden !important; }
+          .certificate-printable, .certificate-printable * { visibility: visible !important; }
+          .certificate-printable {
+            position: absolute !important; left: 0 !important; top: 0 !important;
+            width: 100% !important; padding: 24px !important;
+            background: #fff !important;
+          }
+          .certificate-toolbar { display: none !important; }
+        }
+      `}</style>
     </div>
   );
 }
