@@ -56,7 +56,7 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
   const stripRef     = useRef<HTMLDivElement>(null);
   const renderTask   = useRef<any>(null);
   const touchStartRef = useRef<{ x: number; y: number; t: number } | null>(null);
-  const { isMobile } = useViewport();
+  const { isMobile, isMobileLandscape } = useViewport();
 
   const [pdfDoc,      setPdfDoc]      = useState<any>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -218,6 +218,25 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
     return () => document.removeEventListener('fullscreenchange', h);
   }, []);
 
+  // Auto-enter pseudo-fullscreen when the phone is rotated to landscape — in
+  // portrait the viewer fits in the page layout, but in landscape the
+  // surrounding chrome eats so much height that the slide gets squashed. On
+  // landscape we want the whole screen.
+  // We also exit when going back to portrait, so the page resumes its normal
+  // scrollable layout.
+  useEffect(() => {
+    if (isMobileLandscape) {
+      setIsFullscreen(true);
+      // Bump the render so the canvas refits the new viewport immediately.
+      setViewportTick(t => t + 1);
+    } else if (isMobile) {
+      // Only auto-exit on actual mobile devices — desktop users may want to
+      // keep fullscreen on after orientation hijinks.
+      setIsFullscreen(false);
+      setViewportTick(t => t + 1);
+    }
+  }, [isMobileLandscape, isMobile]);
+
   const goPage = useCallback((delta: number) => {
     setCurrentPage(p => Math.max(1, Math.min(totalPages, p + delta)));
     // After a successful navigation we can dismiss the swipe hint.
@@ -298,10 +317,11 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
     <div ref={containerRef} style={containerStyle}>
 
       {/* Toolbar — compact on mobile (no page input/duplicate prev-next, just
-          Download + Fullscreen + truncated title). Desktop keeps full controls. */}
+          Download + Fullscreen + truncated title). Even slimmer on landscape
+          so the slide gets the maximum vertical room. */}
       <div style={{
         display: 'flex', alignItems: 'center', gap: 8,
-        padding: isMobile ? '8px 10px' : '7px 12px',
+        padding: isMobileLandscape ? '4px 8px' : isMobile ? '8px 10px' : '7px 12px',
         background: 'rgba(0,0,0,0.78)', flexShrink: 0,
       }}>
         {isMobile ? (
@@ -394,10 +414,64 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
             <span>← Свайп для перелистывания →</span>
           </div>
         )}
+
+        {/* Landscape floating controls — large round arrows on the sides
+            + a page counter at the bottom centre. Replaces the row-bar to
+            give the slide the most vertical room possible. */}
+        {isMobileLandscape && totalPages > 1 && (
+          <>
+            <button
+              onClick={() => goPage(-1)}
+              disabled={currentPage <= 1}
+              aria-label="Предыдущая страница"
+              style={{
+                position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)',
+                width: 44, height: 44, borderRadius: '50%', border: 'none',
+                background: currentPage <= 1 ? 'rgba(0,0,0,0.35)' : 'rgba(0,0,0,0.6)',
+                color: currentPage <= 1 ? 'rgba(255,255,255,0.35)' : '#fff',
+                cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                backdropFilter: 'blur(6px)' as any,
+                zIndex: 5,
+              }}
+            >
+              <IcChevronLeft size={22} color="currentColor" />
+            </button>
+            <button
+              onClick={() => goPage(+1)}
+              disabled={currentPage >= totalPages}
+              aria-label="Следующая страница"
+              style={{
+                position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                width: 44, height: 44, borderRadius: '50%', border: 'none',
+                background: currentPage >= totalPages ? 'rgba(0,0,0,0.35)' : 'rgba(43,92,230,0.85)',
+                color: currentPage >= totalPages ? 'rgba(255,255,255,0.35)' : '#fff',
+                cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                backdropFilter: 'blur(6px)' as any,
+                zIndex: 5,
+              }}
+            >
+              <IcChevronRight size={22} color="currentColor" />
+            </button>
+            <div style={{
+              position: 'absolute', left: '50%', bottom: 10, transform: 'translateX(-50%)',
+              padding: '5px 12px', borderRadius: 999,
+              background: 'rgba(0,0,0,0.6)', color: '#fff',
+              fontSize: 12, fontWeight: 600,
+              backdropFilter: 'blur(6px)' as any,
+              pointerEvents: 'none', zIndex: 5,
+            }}>
+              {currentPage} / {totalPages}
+            </div>
+          </>
+        )}
       </div>
 
-      {/* Thumbnail strip — tap on any thumb to jump straight to that page. */}
-      {totalPages > 1 && (
+      {/* Thumbnail strip — tap on any thumb to jump straight to that page.
+          Hidden in mobile landscape so the slide can use the full screen
+          height; user can switch pages via swipe or the bottom nav. */}
+      {totalPages > 1 && !isMobileLandscape && (
         <div
           ref={stripRef}
           style={{
@@ -453,59 +527,62 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
         </div>
       )}
 
-      {/* Bottom nav — larger tap targets on mobile, with the next-button
-          highlighted as the primary action */}
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        gap: isMobile ? 8 : 14,
-        padding: isMobile ? '10px 12px' : '9px 16px',
-        background: 'rgba(0,0,0,0.65)', flexShrink: 0,
-      }}>
-        <button
-          onClick={() => goPage(-1)} disabled={currentPage <= 1}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            padding: isMobile ? '12px 14px' : '9px 20px',
-            minWidth: isMobile ? 96 : undefined,
-            borderRadius: 10, border: 'none',
-            background: currentPage <= 1 ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.18)',
-            color: currentPage <= 1 ? 'rgba(255,255,255,0.25)' : '#fff',
-            cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
-            fontSize: isMobile ? 14 : 13, fontWeight: 600,
-            justifyContent: 'center',
-          }}
-        >
-          <IcChevronLeft size={18} color="currentColor" />
-          {!isMobile && 'Назад'}
-        </button>
-
+      {/* Bottom nav. In mobile landscape we don't render a separate row —
+          arrows float on top of the canvas instead, see the floating buttons
+          below in the scrollRef container. */}
+      {!isMobileLandscape && (
         <div style={{
-          padding: '6px 14px', borderRadius: 999,
-          background: 'rgba(255,255,255,0.1)',
-          color: '#fff', fontSize: 13, fontWeight: 600,
-          minWidth: 80, textAlign: 'center', flexShrink: 0,
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          gap: isMobile ? 8 : 14,
+          padding: isMobile ? '10px 12px' : '9px 16px',
+          background: 'rgba(0,0,0,0.65)', flexShrink: 0,
         }}>
-          {currentPage} / {totalPages}
-        </div>
+          <button
+            onClick={() => goPage(-1)} disabled={currentPage <= 1}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: isMobile ? '12px 14px' : '9px 20px',
+              minWidth: isMobile ? 96 : undefined,
+              borderRadius: 10, border: 'none',
+              background: currentPage <= 1 ? 'rgba(255,255,255,0.08)' : 'rgba(255,255,255,0.18)',
+              color: currentPage <= 1 ? 'rgba(255,255,255,0.25)' : '#fff',
+              cursor: currentPage <= 1 ? 'not-allowed' : 'pointer',
+              fontSize: isMobile ? 14 : 13, fontWeight: 600,
+              justifyContent: 'center',
+            }}
+          >
+            <IcChevronLeft size={18} color="currentColor" />
+            {!isMobile && 'Назад'}
+          </button>
 
-        <button
-          onClick={() => goPage(+1)} disabled={currentPage >= totalPages}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            padding: isMobile ? '12px 14px' : '9px 20px',
-            minWidth: isMobile ? 96 : undefined,
-            borderRadius: 10, border: 'none',
-            background: currentPage >= totalPages ? 'rgba(255,255,255,0.08)' : BLUE,
-            color: currentPage >= totalPages ? 'rgba(255,255,255,0.25)' : '#fff',
-            cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer',
-            fontSize: isMobile ? 14 : 13, fontWeight: 600,
-            justifyContent: 'center',
-          }}
-        >
-          {!isMobile && 'Вперёд'}
-          <IcChevronRight size={18} color="currentColor" />
-        </button>
-      </div>
+          <div style={{
+            padding: '6px 14px', borderRadius: 999,
+            background: 'rgba(255,255,255,0.1)',
+            color: '#fff', fontSize: 13, fontWeight: 600,
+            minWidth: 80, textAlign: 'center', flexShrink: 0,
+          }}>
+            {currentPage} / {totalPages}
+          </div>
+
+          <button
+            onClick={() => goPage(+1)} disabled={currentPage >= totalPages}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 6,
+              padding: isMobile ? '12px 14px' : '9px 20px',
+              minWidth: isMobile ? 96 : undefined,
+              borderRadius: 10, border: 'none',
+              background: currentPage >= totalPages ? 'rgba(255,255,255,0.08)' : BLUE,
+              color: currentPage >= totalPages ? 'rgba(255,255,255,0.25)' : '#fff',
+              cursor: currentPage >= totalPages ? 'not-allowed' : 'pointer',
+              fontSize: isMobile ? 14 : 13, fontWeight: 600,
+              justifyContent: 'center',
+            }}
+          >
+            {!isMobile && 'Вперёд'}
+            <IcChevronRight size={18} color="currentColor" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }
