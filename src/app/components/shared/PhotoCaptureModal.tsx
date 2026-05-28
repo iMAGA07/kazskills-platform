@@ -121,24 +121,38 @@ export function PhotoCaptureModal({ open, onClose, onSaved, title, hint }: Props
     if (!preview) return;
     setBusy(true);
     try {
-      // Convert dataURL → Blob → multipart upload
+      // dataURL → Blob
       const res = await fetch(preview);
       const blob = await res.blob();
-      const form = new FormData();
-      form.append('file', blob, `photo-${Date.now()}.jpg`);
+      const filename = `photo-${Date.now()}.jpg`;
 
+      // Two-step direct-to-Storage upload (avoids the Edge Function's 6 MB limit).
       const token = localStorage.getItem('kazskills_token');
-      const headers: Record<string, string> = { Authorization: `Bearer ${publicAnonKey}` };
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${publicAnonKey}`,
+      };
       if (token) headers['x-session-token'] = token;
-      const upRes = await fetch(`${BASE}/upload-material`, { method: 'POST', headers, body: form });
-      if (upRes.status === 401) {
+
+      const initRes = await fetch(`${BASE}/upload-url`, {
+        method: 'POST', headers,
+        body: JSON.stringify({ filename, type: blob.type || 'image/jpeg' }),
+      });
+      if (initRes.status === 401) {
         window.dispatchEvent(new Event('session-expired'));
         throw new Error('Сессия истекла');
       }
-      const data = await upRes.json();
-      if (!upRes.ok || !data.url) throw new Error(data.error ?? 'Не удалось загрузить');
+      const init = await initRes.json();
+      if (!initRes.ok || !init.signedUrl) throw new Error(init.error ?? 'Не удалось получить ссылку');
 
-      onSaved(data.url);
+      const upRes = await fetch(init.signedUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': blob.type || 'image/jpeg' },
+        body: blob,
+      });
+      if (!upRes.ok) throw new Error(`Загрузка не удалась (${upRes.status})`);
+
+      onSaved(init.publicUrl);
       toast.success('Фото сохранено');
       onClose();
     } catch (e: any) {

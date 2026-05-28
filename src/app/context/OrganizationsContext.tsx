@@ -133,20 +133,33 @@ export function OrganizationsProvider({ children }: { children: React.ReactNode 
   }, []);
 
   const uploadLogo = useCallback(async (file: File): Promise<string> => {
-    const formData = new FormData();
-    formData.append('file', file);
-    // /upload-material is admin-only and returns { url } — perfect for a logo blob.
+    // Two-step signed-URL upload — bypasses the Edge Function's 6 MB body limit
+    // and is faster for large files since the bytes go straight to Storage.
     const token = localStorage.getItem('kazskills_token');
-    const headers: Record<string, string> = { Authorization: `Bearer ${publicAnonKey}` };
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${publicAnonKey}`,
+    };
     if (token) headers['x-session-token'] = token;
-    const res = await fetch(`${BASE}/upload-material`, { method: 'POST', headers, body: formData });
-    if (res.status === 401) {
+
+    const initRes = await fetch(`${BASE}/upload-url`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ filename: file.name, type: file.type }),
+    });
+    if (initRes.status === 401) {
       window.dispatchEvent(new Event('session-expired'));
       throw new Error('Сессия истекла');
     }
-    const data = await res.json();
-    if (!res.ok || !data.url) throw new Error(data.error ?? 'Не удалось загрузить файл');
-    return data.url;
+    const init = await initRes.json();
+    if (!initRes.ok || !init.signedUrl) throw new Error(init.error ?? 'Не удалось получить ссылку');
+
+    const upRes = await fetch(init.signedUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+      body: file,
+    });
+    if (!upRes.ok) throw new Error(`Не удалось загрузить файл (${upRes.status})`);
+    return init.publicUrl;
   }, []);
 
   return (

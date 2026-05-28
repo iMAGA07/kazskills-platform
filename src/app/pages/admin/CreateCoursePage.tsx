@@ -73,34 +73,48 @@ export default function CreateCoursePage() {
   const [uploadErrors, setUploadErrors] = useState<Record<string, string>>({});
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
-  // Upload file to server
+  // Two-step upload: (1) ask the Edge Function for a signed Storage URL,
+  // (2) PUT the file straight to Supabase Storage. Bypasses the 6 MB Edge
+  // Function payload limit — files up to the bucket limit (~50 MB by default)
+  // work. The Edge Function call only carries the filename so it's tiny.
   const uploadFile = useCallback(async (matId: string, file: File) => {
     setUploadingIds(prev => new Set(prev).add(matId));
     setUploadErrors(prev => { const n = { ...prev }; delete n[matId]; return n; });
     try {
-      const fd = new FormData();
-      fd.append('file', file);
-      // /upload-material now requires the admin session token in addition to
-      // the Supabase anon key — without it the server returns 401.
       const token = localStorage.getItem('kazskills_token');
-      const headers: Record<string, string> = { Authorization: `Bearer ${publicAnonKey}` };
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${publicAnonKey}`,
+      };
       if (token) headers['x-session-token'] = token;
-      const res = await fetch(`${BASE}/upload-material`, {
+
+      // Step 1: get a signed upload URL.
+      const initRes = await fetch(`${BASE}/upload-url`, {
         method: 'POST',
         headers,
-        body: fd,
+        body: JSON.stringify({ filename: file.name, type: file.type }),
       });
-      if (res.status === 401) {
-        throw new Error('Сессия истекла. Войдите снова в админку.');
+      if (initRes.status === 401) throw new Error('Сессия истекла. Войдите снова в админку.');
+      const init = await initRes.json();
+      if (!initRes.ok || !init.signedUrl) throw new Error(init.error || 'Не удалось получить ссылку для загрузки');
+
+      // Step 2: PUT the file directly to Supabase Storage.
+      const upRes = await fetch(init.signedUrl, {
+        method: 'PUT',
+        headers: { 'Content-Type': file.type || 'application/octet-stream' },
+        body: file,
+      });
+      if (!upRes.ok) {
+        const text = await upRes.text().catch(() => '');
+        throw new Error(`Не удалось загрузить файл (${upRes.status})${text ? `: ${text.slice(0, 120)}` : ''}`);
       }
-      const data = await res.json();
-      if (!res.ok || data.error) throw new Error(data.error || 'Ошибка загрузки');
-      const uploadedName = data.name ?? file.name;
+
+      const uploadedName = init.name ?? file.name;
       const nameWithoutExt = uploadedName.replace(/\.[^/.]+$/, '');
       setMaterials(prev => prev.map(m => m.id === matId
         ? {
             ...m,
-            url: data.url,
+            url: init.publicUrl,
             fileName: uploadedName,
             // Auto-fill title from filename if still empty
             title: m.title.trim() ? m.title : nameWithoutExt,

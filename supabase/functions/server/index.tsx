@@ -52,7 +52,45 @@ app.get("/make-server-3ed1835c/health", (c) => c.json({ status: "ok" }));
 
 // ─── FILE UPLOAD ──────────────────────────────────────────────────────────────
 
+// POST /upload-url — generate a signed upload URL so the client can PUT the file
+// directly to Supabase Storage and bypass the Edge Function's 6 MB body limit.
+// Admin only.
+app.post("/make-server-3ed1835c/upload-url", requireAuth, requireAdmin, async (c) => {
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const filename = typeof body.filename === "string" ? body.filename : "file";
+    const ext = (filename.split(".").pop() || "bin").toLowerCase();
+    const safe = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const path = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safe}`;
+
+    const { data, error } = await supabase.storage
+      .from(BUCKET_NAME)
+      .createSignedUploadUrl(path);
+
+    if (error || !data) {
+      console.log("createSignedUploadUrl error:", error);
+      return c.json({ error: error?.message ?? "Could not create signed URL" }, 500);
+    }
+
+    const { data: pub } = supabase.storage.from(BUCKET_NAME).getPublicUrl(path);
+
+    return c.json({
+      signedUrl: data.signedUrl,
+      token: data.token,
+      path,
+      publicUrl: pub.publicUrl,
+      name: filename,
+      ext,
+    });
+  } catch (err) {
+    console.log("Error in /upload-url:", err);
+    return c.json({ error: `Failed to create upload URL: ${err}` }, 500);
+  }
+});
+
 // POST /upload-material — upload PDF or PPTX file to Supabase Storage (admin only)
+// Kept for backwards compatibility. Capped at the Edge Function's ~6 MB body
+// limit; for larger files use the two-step /upload-url flow above.
 app.post("/make-server-3ed1835c/upload-material", requireAuth, requireAdmin, async (c) => {
   try {
     const formData = await c.req.formData();
