@@ -7,6 +7,7 @@ import { IcBook, IcFileText, IcBell, IcCamera, IcLogout } from '../Icons';
 import { useLanguage } from '../../context/LanguageContext';
 import { getOrganizationName, getCurrentOrganization, useOrganizations } from '../../lib/organization';
 import { PhotoCaptureModal } from '../shared/PhotoCaptureModal';
+import { useViewport } from '../../lib/useViewport';
 
 // Logo component — uses the tenant org logo on subdomains, KAZSKILLS on the root.
 // Click → user's home page (role-aware).
@@ -88,6 +89,7 @@ export function AppLayout() {
   const { t } = useLanguage();
   const navigate = useNavigate();
   const location = useLocation();
+  const { isMobile } = useViewport();
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [photoOpen, setPhotoOpen] = useState(false);
   const orgName = getOrganizationName();
@@ -106,17 +108,23 @@ export function AppLayout() {
         boxShadow: '0 1px 0 #E3E7F0',
       }}>
         <div style={{
-          height: 68,
+          height: isMobile ? 56 : 68,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'space-between',
-          padding: '0 24px',
-          gap: '32px',
+          padding: isMobile ? '0 12px' : '0 24px',
+          gap: isMobile ? 10 : 32,
         }}>
           {/* Left: Logo + Nav */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '32px' }}>
+          <div className="app-header-nav" style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: isMobile ? 10 : 32,
+            flex: 1,
+            minWidth: 0,
+          }}>
             <Logo />
-            {orgName && (
+            {orgName && !isMobile && (
               <div style={{
                 padding: '4px 12px',
                 borderRadius: '999px',
@@ -126,6 +134,7 @@ export function AppLayout() {
                 fontWeight: 700,
                 letterSpacing: '0.08em',
                 textTransform: 'uppercase',
+                whiteSpace: 'nowrap',
               }}>
                 {orgName}
               </div>
@@ -133,36 +142,28 @@ export function AppLayout() {
 
             {/* Navigation tabs */}
             {isStudent && (
-              <div style={{ display: 'flex', gap: '4px' }}>
+              <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                 <button
                   onClick={() => navigate('/student/courses')}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '8px',
-                    padding: '10px 16px',
+                    gap: isMobile ? 6 : 8,
+                    padding: isMobile ? '8px 10px' : '10px 16px',
                     background: isActive('/student/courses') ? '#EBF1FE' : 'transparent',
                     border: 'none',
                     borderRadius: '8px',
                     color: isActive('/student/courses') ? '#2B5CE6' : '#6B7280',
                     cursor: 'pointer',
-                    fontSize: '14px',
+                    fontSize: isMobile ? 13 : 14,
                     fontWeight: 500,
                     transition: 'all 0.15s',
-                  }}
-                  onMouseEnter={e => {
-                    if (!isActive('/student/courses')) {
-                      (e.currentTarget as HTMLButtonElement).style.background = '#F4F6FB';
-                    }
-                  }}
-                  onMouseLeave={e => {
-                    if (!isActive('/student/courses')) {
-                      (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
-                    }
+                    whiteSpace: 'nowrap',
                   }}
                 >
-                  <IcBook size={16} color="currentColor" />
-                  <span>{t('nav.my_courses')}</span>
+                  <IcBook size={isMobile ? 14 : 16} color="currentColor" />
+                  {!isMobile && <span>{t('nav.my_courses')}</span>}
+                  {isMobile && <span>Курсы</span>}
                 </button>
 
                 <button
@@ -170,76 +171,62 @@ export function AppLayout() {
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: '8px',
-                    padding: '10px 16px',
+                    gap: isMobile ? 6 : 8,
+                    padding: isMobile ? '8px 10px' : '10px 16px',
                     background: isActive('/student/documents') ? '#EBF1FE' : 'transparent',
                     border: 'none',
                     borderRadius: '8px',
                     color: isActive('/student/documents') ? '#2B5CE6' : '#6B7280',
                     cursor: 'pointer',
-                    fontSize: '14px',
+                    fontSize: isMobile ? 13 : 14,
                     fontWeight: 500,
                     transition: 'all 0.15s',
-                  }}
-                  onMouseEnter={e => {
-                    if (!isActive('/student/documents')) {
-                      (e.currentTarget as HTMLButtonElement).style.background = '#F4F6FB';
-                    }
-                  }}
-                  onMouseLeave={e => {
-                    if (!isActive('/student/documents')) {
-                      (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
-                    }
+                    whiteSpace: 'nowrap',
                   }}
                 >
-                  <IcFileText size={16} color="currentColor" />
-                  <span>{t('nav.documents')}</span>
+                  <IcFileText size={isMobile ? 14 : 16} color="currentColor" />
+                  {!isMobile && <span>{t('nav.documents')}</span>}
+                  {isMobile && <span>Документы</span>}
                 </button>
               </div>
             )}
           </div>
 
           {/* Right: Language + Bell + Avatar */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-            <LanguageSwitcher variant="light" />
+          <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? 6 : 12, flexShrink: 0 }}>
+            {!isMobile && <LanguageSwitcher variant="light" />}
 
-            {/* Bell */}
-            <button
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: '9px',
-                background: '#F4F6FB',
-                border: '1px solid #E3E7F0',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-                color: '#6B7280',
-                position: 'relative',
-                transition: 'all 0.15s',
-              }}
-              onMouseEnter={e => {
-                (e.currentTarget as HTMLButtonElement).style.borderColor = '#2B5CE6';
-                (e.currentTarget as HTMLButtonElement).style.color = '#2B5CE6';
-              }}
-              onMouseLeave={e => {
-                (e.currentTarget as HTMLButtonElement).style.borderColor = '#E3E7F0';
-                (e.currentTarget as HTMLButtonElement).style.color = '#6B7280';
-              }}
-            >
-              <IcBell size={17} color="currentColor" />
-              <span style={{
-                position: 'absolute',
-                top: '8px',
-                right: '8px',
-                width: '7px',
-                height: '7px',
-                background: '#DC2626',
-                borderRadius: '50%',
-                border: '1.5px solid #fff',
-              }} />
-            </button>
+            {/* Bell — hidden on mobile to save space */}
+            {!isMobile && (
+              <button
+                style={{
+                  width: 36,
+                  height: 36,
+                  borderRadius: '9px',
+                  background: '#F4F6FB',
+                  border: '1px solid #E3E7F0',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  cursor: 'pointer',
+                  color: '#6B7280',
+                  position: 'relative',
+                  transition: 'all 0.15s',
+                }}
+              >
+                <IcBell size={17} color="currentColor" />
+                <span style={{
+                  position: 'absolute',
+                  top: '8px',
+                  right: '8px',
+                  width: '7px',
+                  height: '7px',
+                  background: '#DC2626',
+                  borderRadius: '50%',
+                  border: '1.5px solid #fff',
+                }} />
+              </button>
+            )}
 
             {/* Avatar with dropdown */}
             <div style={{ position: 'relative' }}>
@@ -280,7 +267,8 @@ export function AppLayout() {
                     position: 'absolute',
                     top: '48px',
                     right: 0,
-                    width: '320px',
+                    width: isMobile ? 'calc(100vw - 24px)' : '320px',
+                    maxWidth: isMobile ? 'calc(100vw - 24px)' : 'none',
                     background: '#fff',
                     borderRadius: '12px',
                     boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
@@ -405,7 +393,7 @@ export function AppLayout() {
       </header>
 
       {/* Page */}
-      <main style={{ flex: 1, overflowY: 'auto', padding: '28px', background: '#EDF0F8' }}>
+      <main className="app-main" style={{ flex: 1, overflowY: 'auto', padding: '28px', background: '#EDF0F8' }}>
         <BackBar />
         <Outlet />
       </main>

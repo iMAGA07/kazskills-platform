@@ -58,7 +58,11 @@ export default function ProfilePage() {
         <p style={{ color: '#6B7280', margin: 0, fontSize: '13.5px' }}>Управление личными данными и просмотр статистики</p>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 300px', gap: '20px', alignItems: 'start' }}>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))',
+        gap: '20px', alignItems: 'start',
+      }}>
         {/* Left */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
           {/* Avatar card */}
@@ -101,7 +105,7 @@ export default function ProfilePage() {
           {/* Personal info form */}
           <div style={{ background: '#fff', borderRadius: '14px', padding: '24px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
             <h4 style={{ margin: '0 0 20px', color: '#0F1629' }}>{t('profile.personal')}</h4>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '16px' }}>
               {[
                 { label: t('profile.name'), key: 'name', icon: IcPerson, type: 'text' },
                 { label: t('profile.phone'), key: 'phone', icon: IcPhone, type: 'tel' },
@@ -157,7 +161,7 @@ export default function ProfilePage() {
           {/* Password */}
           <div style={{ background: '#fff', borderRadius: '14px', padding: '24px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)' }}>
             <h4 style={{ margin: '0 0 16px', color: '#0F1629', fontSize: '15px' }}>{t('profile.change_password')}</h4>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
               {['Текущий пароль', 'Новый пароль', 'Подтверждение'].map(l => (
                 <div key={l}>
                   <label style={{ display: 'block', marginBottom: '7px', color: '#374151', fontSize: '12.5px' }}>{l}</label>

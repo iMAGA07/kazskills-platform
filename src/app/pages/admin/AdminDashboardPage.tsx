@@ -991,20 +991,22 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
                 </button>
               </div>
 
-              {/* Preview table */}
-              <div style={{ borderRadius: 10, border: '1px solid #E3E7F0', overflow: 'hidden' }}>
+              {/* Preview table — scrolls horizontally on narrow screens */}
+              <div style={{ borderRadius: 10, border: '1px solid #E3E7F0', overflow: 'auto' }}>
                 <div style={{
-                  display: 'grid', gridTemplateColumns: '36px 1fr 1fr 90px 70px',
+                  display: 'grid', gridTemplateColumns: '36px minmax(160px, 1fr) minmax(140px, 1fr) 90px 70px',
                   padding: '10px 14px', background: NAVY, gap: 10,
                   fontSize: 11, fontWeight: 600, color: '#fff', textTransform: 'uppercase',
+                  minWidth: 520,
                 }}>
                   <div>№</div><div>ФИО</div><div>Должность</div><div>Логин</div><div>Пароль</div>
                 </div>
                 {employees.map((emp, i) => (
                   <div key={emp.id} style={{
-                    display: 'grid', gridTemplateColumns: '36px 1fr 1fr 90px 70px',
+                    display: 'grid', gridTemplateColumns: '36px minmax(160px, 1fr) minmax(140px, 1fr) 90px 70px',
                     padding: '9px 14px', gap: 10, fontSize: 12.5, color: '#374151',
                     borderBottom: i < employees.length - 1 ? '1px solid #F3F4F6' : 'none',
+                    minWidth: 520,
                     background: i % 2 === 0 ? '#fff' : '#FAFBFF',
                   }}>
                     <div style={{ color: MUTED, fontWeight: 600 }}>{i + 1}</div>
@@ -1745,7 +1747,7 @@ function RequestEditView({
                       background: willDelete ? '#FEF2F2' : '#FAFBFE', marginBottom: 8,
                       opacity: willDelete ? 0.5 : 1, transition: 'all 0.15s',
                     }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '24px 2fr 1.5fr 1fr 1fr 36px', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '24px minmax(160px, 2fr) minmax(120px, 1.5fr) minmax(80px, 1fr) minmax(80px, 1fr) 36px', gap: 8, alignItems: 'center', marginBottom: 8, minWidth: 580, overflowX: 'auto' as const }}>
                         <span style={{ fontSize: 12, fontWeight: 700, color: MUTED, textAlign: 'center' }}>{idx + 1}</span>
                         <input
                           value={m.name} onChange={e => updMember(m.id, 'name', e.target.value)}
@@ -1808,7 +1810,7 @@ function RequestEditView({
                       padding: 12, borderRadius: 10, border: `1.5px solid #BBF7D0`,
                       background: '#F0FDF4', marginBottom: 8,
                     }}>
-                      <div style={{ display: 'grid', gridTemplateColumns: '24px 2fr 1.5fr 1fr 1fr 36px', gap: 8, alignItems: 'center', marginBottom: 8 }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '24px minmax(160px, 2fr) minmax(120px, 1.5fr) minmax(80px, 1fr) minmax(80px, 1fr) 36px', gap: 8, alignItems: 'center', marginBottom: 8, minWidth: 580, overflowX: 'auto' as const }}>
                         <span style={{ fontSize: 12, fontWeight: 700, color: '#059669', textAlign: 'center' }}>+{idx + 1}</span>
                         <input value={r.name} onChange={e => updNewRow(r.id, 'name', e.target.value)} placeholder="ФИО" style={editInp} />
                         <input value={r.position} onChange={e => updNewRow(r.id, 'position', e.target.value)} placeholder="Должность" style={editInp} />

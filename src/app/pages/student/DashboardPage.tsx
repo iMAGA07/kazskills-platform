@@ -109,7 +109,11 @@ export default function DashboardPage() {
         <StatCard value={allProgress.reduce((s, p) => s + (p.attempts?.length || 0), 0)} label="Попыток тестов" icon={IcClock} />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 320px', gap: '24px', alignItems: 'start' }}>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))',
+        gap: '24px', alignItems: 'start',
+      }}>
 
         {/* ── Active courses (left) ── */}
         <div>

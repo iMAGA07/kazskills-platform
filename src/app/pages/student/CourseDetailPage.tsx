@@ -376,7 +376,7 @@ export default function CourseDetailPage() {
             </p>
 
             {/* Stats */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '20px' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '10px', marginBottom: '20px' }}>
               {[
                 { label: 'Количество вопросов',  value: course.test.questions.length },
                 { label: 'Время на прохождение', value: `${course.test.timeLimit} мин` },

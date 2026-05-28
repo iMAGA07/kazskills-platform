@@ -6,3 +6,46 @@
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
 }
+
+/* ─── Mobile-friendly defaults ─────────────────────────────────────────────
+   The codebase uses inline styles heavily, so global media queries here only
+   touch a handful of layout patterns that are easiest to fix centrally.
+   Component-level breakpoints live next to their components via useViewport. */
+
+html, body {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Tables in the student area become horizontally scrollable on narrow viewports
+   instead of overflowing the screen. */
+@media (max-width: 720px) {
+  table {
+    display: block;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+  }
+}
+
+/* Default page padding is smaller on mobile so cards don't stick to the edges
+   without wasting half the width. AppLayout's <main> sets its own padding,
+   we override here. */
+@media (max-width: 720px) {
+  .app-main {
+    padding: 16px !important;
+  }
+}
+
+/* When the header has too many nav buttons, allow horizontal scroll instead
+   of clipping the right side. */
+.app-header-nav {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.app-header-nav::-webkit-scrollbar { display: none; }
+.app-header-nav { scrollbar-width: none; }

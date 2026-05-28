@@ -106,12 +106,13 @@ export default function AdminCoursesPage() {
         </div>
       </div>
 
-      {/* Courses table */}
-      <div style={{ background: '#fff', borderRadius: '14px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', overflow: 'hidden', border: `1px solid ${BORDER}` }}>
+      {/* Courses table — scrollable horizontally on narrow screens */}
+      <div style={{ background: '#fff', borderRadius: '14px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', overflow: 'auto', border: `1px solid ${BORDER}` }}>
         {/* Table header */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: '1fr 140px 110px 100px',
+          gridTemplateColumns: 'minmax(200px, 1fr) 140px 110px 100px',
+          minWidth: 600,
           padding: '12px 20px',
           background: FAINT,
           borderBottom: `1px solid ${BORDER}`,
@@ -156,7 +157,8 @@ export default function AdminCoursesPage() {
             key={course.id}
             style={{
               display: 'grid',
-              gridTemplateColumns: '1fr 140px 110px 100px',
+              gridTemplateColumns: 'minmax(200px, 1fr) 140px 110px 100px',
+          minWidth: 600,
               padding: '14px 20px',
               gap: '12px',
               borderBottom: i < filtered.length - 1 ? `1px solid ${FAINT}` : 'none',

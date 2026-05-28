@@ -9,6 +9,7 @@ import {
 import { useAuth } from '../../context/AuthContext';
 import { useLanguage } from '../../context/LanguageContext';
 import { useCourses } from '../../context/CoursesContext';
+import { useViewport } from '../../lib/useViewport';
 
 type CameraState = 'requesting' | 'granted' | 'denied';
 
@@ -18,6 +19,7 @@ export default function TestPage() {
   const { t } = useLanguage();
   const navigate = useNavigate();
   const { getCourse, saveAttempt } = useCourses();
+  const { isMobile } = useViewport();
 
   const course = courseId ? getCourse(courseId) : undefined;
 
@@ -287,10 +289,16 @@ export default function TestPage() {
   const q = questions[currentQ];
 
   return (
-    <div style={{ display: 'flex', gap: 20, height: 'calc(100vh - 128px)' }}>
-      {/* Left sidebar: question map */}
+    <div style={{
+      display: 'flex',
+      flexDirection: isMobile ? 'column' : 'row',
+      gap: isMobile ? 12 : 20,
+      height: isMobile ? 'auto' : 'calc(100vh - 128px)',
+    }}>
+      {/* Sidebar: question map. Becomes a top strip on mobile. */}
       <div style={{
-        width: 220, minWidth: 220,
+        width: isMobile ? '100%' : 220,
+        minWidth: isMobile ? undefined : 220,
         background: '#fff', border: '1px solid #E3E7F0',
         borderRadius: 14, overflow: 'hidden', display: 'flex', flexDirection: 'column',
         boxShadow: '0 1px 4px rgba(0,0,0,0.05)',

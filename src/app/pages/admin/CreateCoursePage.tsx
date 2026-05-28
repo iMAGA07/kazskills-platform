@@ -700,7 +700,7 @@ export default function CreateCoursePage() {
         <div style={card}>
           <h3 style={{ margin: '0 0 6px', color: '#0F1629' }}>Настройки теста и публикации</h3>
           <p style={{ margin: '0 0 22px', color: '#6B7280', fontSize: '13px' }}>Задайте параметры прохождения итогового теста</p>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 20 }}>
             <div>
               <label style={{ display: 'block', marginBottom: 8, color: '#374151', fontSize: '13px', fontWeight: 500 }}>
                 {t('admin.pass_score')}

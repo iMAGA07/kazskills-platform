@@ -209,7 +209,7 @@ export default function AdminAnalyticsPage() {
       </div>
 
       {/* Charts row 2 */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '20px' }}>
         <div style={{ background: '#fff', borderRadius: '14px', padding: '24px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', border: `1px solid ${BORDER}` }}>
           <h4 style={{ margin: '0 0 20px', color: '#0F1629', fontSize: '14px' }}>Проходной балл по курсам</h4>
           {passRateBars.length === 0 ? (

@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import { useAuth } from '../../context/AuthContext';
 import { useCourses, UserProgress } from '../../context/CoursesContext';
 import { IcSearch, IcCheckCircle, IcBook, IcChevronRight } from '../../components/Icons';
+import { useViewport } from '../../lib/useViewport';
 
 const NAVY   = '#1B3D84';
 const BLUE   = '#2B5CE6';
@@ -22,6 +23,7 @@ export default function CoursesPage() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { courses, loading, getProgress } = useCourses();
+  const { isMobile } = useViewport();
 
   const [search, setSearch]           = useState('');
   const [progressMap, setProgressMap] = useState<Record<string, UserProgress>>({});
@@ -116,8 +118,55 @@ export default function CoursesPage() {
         </div>
       )}
 
-      {/* Courses table */}
-      {!loading && filtered.length > 0 && (
+      {/* Courses — list of cards on mobile */}
+      {!loading && filtered.length > 0 && isMobile && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {filtered.map(course => {
+            const status = getStatus(course.id);
+            const st = statusLabel[status] ?? statusLabel['not_started'];
+            const expiryDate = getExpiryDate(course.id);
+            return (
+              <div
+                key={course.id}
+                onClick={() => navigate(`/student/courses/${course.id}`)}
+                style={{
+                  background: '#fff', borderRadius: 12,
+                  border: '1px solid #E3E7F0', padding: '14px 14px',
+                  cursor: 'pointer', display: 'flex', gap: 12,
+                }}
+              >
+                <div style={{
+                  width: 40, height: 40, borderRadius: 10,
+                  background: '#EBF1FE', flexShrink: 0,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <IcBook size={18} color="#2B5CE6" />
+                </div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#2B5CE6', lineHeight: 1.35, marginBottom: 6 }}>
+                    {course.title}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 10px' }}>
+                    <span style={{
+                      display: 'inline-block', fontSize: 11, fontWeight: 600,
+                      color: st.color, background: st.bg,
+                      padding: '3px 9px', borderRadius: 12,
+                    }}>{st.label}</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                      <RussianFlag />
+                    </span>
+                    <span style={{ fontSize: 11.5, color: '#6B7280' }}>до {expiryDate}</span>
+                  </div>
+                </div>
+                <IcChevronRight size={16} color="#9CA3AF" style={{ alignSelf: 'center', flexShrink: 0 }} />
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Courses table (desktop / tablet) */}
+      {!loading && filtered.length > 0 && !isMobile && (
         <div style={{
           background: '#fff', borderRadius: '12px',
           border: '1px solid #E3E7F0', overflow: 'hidden',

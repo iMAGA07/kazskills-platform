@@ -352,7 +352,7 @@ function UserFormModal({ open, onClose, editUser, organizations }: {
                 {errors.name && <span style={{ fontSize: '11.5px', color: '#DC2626' }}>{errors.name}</span>}
               </Field>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
                 <Field label="Email" required>
                   <input
                     type="email" value={form.email} onChange={e => set('email', e.target.value)}
@@ -403,7 +403,7 @@ function UserFormModal({ open, onClose, editUser, organizations }: {
                 Роль и статус
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
                 <Field label="Роль" required>
                   <Dropdown
                     value={form.role}
@@ -485,7 +485,7 @@ function UserFormModal({ open, onClose, editUser, organizations }: {
                 {errors.organization && !tenantOrg && <span style={{ fontSize: '11.5px', color: '#DC2626' }}>{errors.organization}</span>}
               </Field>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
                 <Field label="Отдел">
                   <input
                     value={form.department} onChange={e => set('department', e.target.value)}
@@ -916,14 +916,15 @@ export default function AdminUsersPage() {
         )}
       </div>
 
-      {/* ── Table ── */}
-      <div style={{ background: '#fff', borderRadius: '14px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', overflow: 'hidden', border: '1px solid #F3F4F6' }}>
+      {/* ── Table — horizontally scrolls on mobile so narrow screens don't clip columns ── */}
+      <div style={{ background: '#fff', borderRadius: '14px', boxShadow: '0 1px 4px rgba(0,0,0,0.06)', overflow: 'auto', border: '1px solid #F3F4F6' }}>
         {/* Table head */}
         <div style={{
           display: 'grid',
-          gridTemplateColumns: '2.4fr 1.6fr 1.2fr 80px 80px 60px',
+          gridTemplateColumns: 'minmax(220px, 2.4fr) minmax(140px, 1.6fr) minmax(120px, 1.2fr) 80px 80px 60px',
           padding: '12px 20px', background: '#F8FAFD',
           borderBottom: '1px solid #E3E7F0', gap: '12px',
+          minWidth: 760,
         }}>
           <SortHeader label="Пользователь" field="name" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
           <SortHeader label="Организация" field="organization" sortKey={sortKey} sortDir={sortDir} onSort={handleSort} />
@@ -949,11 +950,12 @@ export default function AdminUsersPage() {
               key={u.id}
               style={{
                 display: 'grid',
-                gridTemplateColumns: '2.4fr 1.6fr 1.2fr 80px 80px 60px',
+                gridTemplateColumns: 'minmax(220px, 2.4fr) minmax(140px, 1.6fr) minmax(120px, 1.2fr) 80px 80px 60px',
                 padding: '13px 20px', gap: '12px', alignItems: 'center',
                 borderBottom: i < displayUsers.length - 1 ? '1px solid #F3F4F6' : 'none',
                 transition: 'background 0.1s',
                 opacity: u.status === 'blocked' ? 0.75 : 1,
+                minWidth: 760,
               }}
               onMouseEnter={e => (e.currentTarget as HTMLDivElement).style.background = '#FAFBFF'}
               onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = 'transparent'}

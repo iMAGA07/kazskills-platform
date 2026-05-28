@@ -103,7 +103,7 @@ export default function ResultsPage() {
       </div>
 
       {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', marginBottom: '16px' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px', marginBottom: '16px' }}>
         {[
           { icon: IcTarget, label: 'Проходной балл', value: `${passingScore}%`, color: '#2B5CE6', bg: '#EBF1FE' },
           { icon: IcTrendingUp, label: 'Ваш результат', value: `${score}%`, color: scoreColor, bg: '#F4F6FB' },

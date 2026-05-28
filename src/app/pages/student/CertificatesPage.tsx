@@ -8,6 +8,7 @@ import {
 } from '../../components/Icons';
 import { useUsers } from '../../context/UsersContext';
 import { PhotoCaptureModal } from '../../components/shared/PhotoCaptureModal';
+import { useViewport } from '../../lib/useViewport';
 
 const NAVY   = '#1B3D84';
 const BLUE   = '#2B5CE6';
@@ -43,6 +44,7 @@ export default function CertificatesPage() {
   const [certs, setCerts] = useState<CertData[]>([]);
   const [loading, setLoading] = useState(true);
   const [photoOpen, setPhotoOpen] = useState(false);
+  const { isMobile } = useViewport();
 
   useEffect(() => {
     if (!user || courses.length === 0) { setLoading(false); return; }
@@ -129,7 +131,7 @@ export default function CertificatesPage() {
 
       {/* Grid */}
       {!loading && certs.length > 0 && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(330px, 1fr))', gap: '16px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 280px), 1fr))', gap: '16px' }}>
           {certs.map(cert => (
             <div
               key={cert.courseId}
@@ -264,7 +266,7 @@ export default function CertificatesPage() {
           style={{
             position: 'fixed', inset: 0, background: 'rgba(15,22,41,0.7)',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
-            zIndex: 200, backdropFilter: 'blur(8px)', padding: '24px',
+            zIndex: 200, backdropFilter: 'blur(8px)', padding: isMobile ? 12 : 24,
           }}
           onClick={() => setViewCert(null)}
         >
@@ -324,7 +326,7 @@ export default function CertificatesPage() {
               {/* Top gradient bar */}
               <div style={{ height: 5, background: `linear-gradient(90deg, ${NAVY} 0%, ${BLUE} 50%, ${GOLD} 100%)` }} />
 
-              <div style={{ padding: '44px 52px 40px', position: 'relative' }}>
+              <div style={{ padding: isMobile ? '32px 20px 28px' : '44px 52px 40px', position: 'relative' }}>
                 {/* Corner accents */}
                 {(['tl','tr','bl','br'] as const).map(c => (
                   <div key={c} style={{
@@ -379,7 +381,12 @@ export default function CertificatesPage() {
                   </p>
 
                   {/* Name */}
-                  <h2 style={{ color: '#0F1629', margin: '0 0 4px', fontSize: '28px', fontWeight: 800, letterSpacing: '-0.5px' }}>
+                  <h2 style={{
+                    color: '#0F1629', margin: '0 0 4px',
+                    fontSize: isMobile ? '22px' : '28px',
+                    fontWeight: 800, letterSpacing: '-0.5px',
+                    lineHeight: 1.2,
+                  }}>
                     {user.name}
                   </h2>
                   <p style={{ color: MUTED, fontSize: '13px', margin: '0 0 6px' }}>
