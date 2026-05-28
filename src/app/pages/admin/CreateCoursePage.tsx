@@ -80,11 +80,19 @@ export default function CreateCoursePage() {
     try {
       const fd = new FormData();
       fd.append('file', file);
+      // /upload-material now requires the admin session token in addition to
+      // the Supabase anon key — without it the server returns 401.
+      const token = localStorage.getItem('kazskills_token');
+      const headers: Record<string, string> = { Authorization: `Bearer ${publicAnonKey}` };
+      if (token) headers['x-session-token'] = token;
       const res = await fetch(`${BASE}/upload-material`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${publicAnonKey}` },
+        headers,
         body: fd,
       });
+      if (res.status === 401) {
+        throw new Error('Сессия истекла. Войдите снова в админку.');
+      }
       const data = await res.json();
       if (!res.ok || data.error) throw new Error(data.error || 'Ошибка загрузки');
       const uploadedName = data.name ?? file.name;
