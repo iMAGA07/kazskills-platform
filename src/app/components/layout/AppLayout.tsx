@@ -140,53 +140,63 @@ export function AppLayout() {
               </div>
             )}
 
-            {/* Navigation tabs */}
+            {/* Navigation tabs — icon-only on mobile so they don't push the
+                avatar off-screen on narrow viewports (text was getting clipped
+                to e.g. "Докумен"). */}
             {isStudent && (
               <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
                 <button
                   onClick={() => navigate('/student/courses')}
+                  title="Курсы"
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: isMobile ? 6 : 8,
-                    padding: isMobile ? '8px 10px' : '10px 16px',
+                    gap: 8,
+                    padding: isMobile ? '9px' : '10px 16px',
+                    width: isMobile ? 38 : undefined,
+                    height: isMobile ? 38 : undefined,
+                    justifyContent: 'center',
                     background: isActive('/student/courses') ? '#EBF1FE' : 'transparent',
                     border: 'none',
                     borderRadius: '8px',
                     color: isActive('/student/courses') ? '#2B5CE6' : '#6B7280',
                     cursor: 'pointer',
-                    fontSize: isMobile ? 13 : 14,
+                    fontSize: 14,
                     fontWeight: 500,
                     transition: 'all 0.15s',
                     whiteSpace: 'nowrap',
+                    flexShrink: 0,
                   }}
                 >
-                  <IcBook size={isMobile ? 14 : 16} color="currentColor" />
+                  <IcBook size={isMobile ? 18 : 16} color="currentColor" />
                   {!isMobile && <span>{t('nav.my_courses')}</span>}
-                  {isMobile && <span>Курсы</span>}
                 </button>
 
                 <button
                   onClick={() => navigate('/student/documents')}
+                  title="Документы"
                   style={{
                     display: 'flex',
                     alignItems: 'center',
-                    gap: isMobile ? 6 : 8,
-                    padding: isMobile ? '8px 10px' : '10px 16px',
+                    gap: 8,
+                    padding: isMobile ? '9px' : '10px 16px',
+                    width: isMobile ? 38 : undefined,
+                    height: isMobile ? 38 : undefined,
+                    justifyContent: 'center',
                     background: isActive('/student/documents') ? '#EBF1FE' : 'transparent',
                     border: 'none',
                     borderRadius: '8px',
                     color: isActive('/student/documents') ? '#2B5CE6' : '#6B7280',
                     cursor: 'pointer',
-                    fontSize: isMobile ? 13 : 14,
+                    fontSize: 14,
                     fontWeight: 500,
                     transition: 'all 0.15s',
                     whiteSpace: 'nowrap',
+                    flexShrink: 0,
                   }}
                 >
-                  <IcFileText size={isMobile ? 14 : 16} color="currentColor" />
+                  <IcFileText size={isMobile ? 18 : 16} color="currentColor" />
                   {!isMobile && <span>{t('nav.documents')}</span>}
-                  {isMobile && <span>Документы</span>}
                 </button>
               </div>
             )}

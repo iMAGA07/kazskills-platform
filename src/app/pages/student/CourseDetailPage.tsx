@@ -63,15 +63,28 @@ export default function CourseDetailPage() {
         <span style={{ color: '#6B7280' }}>{course.title}</span>
       </div>
 
-      {/* Course title with back button */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-        <h1 style={{ margin: 0, fontSize: '20px', fontWeight: 700, color: '#0F1629', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+      {/* Course title with back button — wraps on narrow screens so a long
+          title doesn't get crammed under a same-line button. */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'flex-start',
+        justifyContent: 'space-between',
+        marginBottom: '20px',
+        gap: 12,
+        flexWrap: 'wrap',
+      }}>
+        <h1 style={{
+          margin: 0, fontSize: '20px', fontWeight: 700, color: '#0F1629',
+          textTransform: 'uppercase', letterSpacing: '0.5px',
+          flex: '1 1 240px', minWidth: 0,
+          wordBreak: 'break-word', lineHeight: 1.3,
+        }}>
           {course.title}
         </h1>
         <button
           onClick={() => navigate('/student/courses')}
           style={{
-            padding: '10px 20px',
+            padding: '10px 16px',
             borderRadius: '8px',
             background: 'linear-gradient(135deg, #2B5CE6, #5B4EF0)',
             border: 'none',
@@ -84,12 +97,14 @@ export default function CourseDetailPage() {
             gap: '8px',
             boxShadow: '0 2px 8px rgba(43,92,230,0.25)',
             transition: 'opacity 0.15s',
+            whiteSpace: 'nowrap',
+            flexShrink: 0,
           }}
           onMouseEnter={e => (e.currentTarget.style.opacity = '0.9')}
           onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
         >
           <span>↻</span>
-          <span>ВЕРНУТЬСЯ НАЗАД</span>
+          <span>Вернуться назад</span>
         </button>
       </div>
 
@@ -168,13 +183,15 @@ export default function CourseDetailPage() {
                       alignItems: 'center',
                       justifyContent: 'space-between',
                       width: '100%',
-                      padding: '16px 20px',
+                      padding: '14px 16px',
                       borderRadius: '8px',
                       border: '1px solid #E3E7F0',
                       background: '#fff',
                       cursor: 'pointer',
                       transition: 'all 0.15s',
                       textAlign: 'left',
+                      gap: 10,
+                      minWidth: 0,
                     }}
                     onMouseEnter={e => {
                       (e.currentTarget as HTMLButtonElement).style.borderColor = '#2B5CE6';
@@ -185,7 +202,10 @@ export default function CourseDetailPage() {
                       (e.currentTarget as HTMLButtonElement).style.background = '#fff';
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    <div style={{
+                      display: 'flex', alignItems: 'center', gap: '12px',
+                      flex: 1, minWidth: 0, // critical: lets the inner span shrink and ellipsize
+                    }}>
                       <div style={{
                         width: '28px',
                         height: '28px',
@@ -197,14 +217,25 @@ export default function CourseDetailPage() {
                         fontSize: '12px',
                         fontWeight: 700,
                         color: '#2B5CE6',
+                        flexShrink: 0,
                       }}>
                         {idx + 1}
                       </div>
-                      <span style={{ fontSize: '14px', fontWeight: 500, color: '#0F1629' }}>
+                      <span style={{
+                        fontSize: '14px', fontWeight: 500, color: '#0F1629',
+                        // Two-line clamp prevents arbitrarily long filenames from
+                        // pushing the chevron off-screen on narrow phones.
+                        display: '-webkit-box',
+                        WebkitBoxOrient: 'vertical',
+                        WebkitLineClamp: 2,
+                        overflow: 'hidden',
+                        wordBreak: 'break-word',
+                        lineHeight: 1.35,
+                      }}>
                         {lesson.title}
                       </span>
                     </div>
-                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" style={{ flexShrink: 0 }}>
                       <path d="M7.5 5L12.5 10L7.5 15" stroke="#2B5CE6" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
                     </svg>
                   </button>
