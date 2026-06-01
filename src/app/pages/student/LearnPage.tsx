@@ -95,9 +95,17 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
     return () => { cancelled = true; };
   }, [url]);
 
-  // Main canvas render — fits the page into the available viewport area
-  // (both width AND height) so the slide is never clipped vertically.
-  // Re-runs when viewportTick changes (resize / orientation / fullscreen).
+  // Main canvas render.
+  //
+  // Two fit modes:
+  //  • Inline / portrait  → FIT-TO-WIDTH. The page fills the container width so
+  //    text is large and readable; tall pages scroll vertically. CRITICALLY,
+  //    this depends ONLY on clientWidth (stable while scrolling), so the iOS
+  //    Safari address-bar collapse — which changes the *height* — no longer
+  //    rescales and jitters the page.
+  //  • Fullscreen → FIT-TO-BOTH (contain). The whole slide is shown at once like
+  //    a slideshow; in fullscreen the height is a stable fixed value, so reading
+  //    it is safe.
   useEffect(() => {
     if (!pdfDoc || !canvasRef.current || !scrollRef.current) return;
     let cancelled = false;
@@ -106,19 +114,33 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
     pdfDoc.getPage(currentPage).then((page: any) => {
       if (cancelled) return;
       const scrollEl = scrollRef.current;
-      if (!scrollEl) return;
-      // Available content area (minus padding on the scroll container).
-      const availW = scrollEl.clientWidth  - 16;
-      const availH = scrollEl.clientHeight - 16;
+      const canvas = canvasRef.current;
+      if (!scrollEl || !canvas) return;
+
+      const padX = 16, padY = 16;
+      const availW = scrollEl.clientWidth  - padX;
+      const availH = scrollEl.clientHeight - padY;
+      // If the container hasn't been laid out yet, bail — the ResizeObserver
+      // will fire once it has a real width and trigger a re-render.
+      if (availW <= 0) return;
+
       const unscaled = page.getViewport({ scale: 1 });
-      const fitScale = Math.min(availW / unscaled.width, availH / unscaled.height);
-      // Cap at 3x to keep zoomed-in renders sharp without exploding memory.
-      const cssScale = Math.max(0.3, Math.min(fitScale, 3));
+
+      let cssScale: number;
+      if (isFullscreen) {
+        // contain: whole page visible
+        cssScale = Math.min(availW / unscaled.width, availH / unscaled.height);
+      } else {
+        // fit width: fill the width, scroll vertically if taller
+        cssScale = availW / unscaled.width;
+      }
+      cssScale = Math.max(0.2, Math.min(cssScale, 4));
+
       const viewport = page.getViewport({ scale: cssScale });
 
-      // Render at devicePixelRatio for crispness on retina / mobile.
-      const dpr = window.devicePixelRatio || 1;
-      const canvas = canvasRef.current!;
+      // Render at devicePixelRatio for crispness on retina / mobile. Cap the
+      // backing-store DPR to 2.5 so huge pages don't blow up canvas memory.
+      const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
       canvas.width  = Math.floor(viewport.width  * dpr);
       canvas.height = Math.floor(viewport.height * dpr);
       canvas.style.width  = `${Math.floor(viewport.width)}px`;
@@ -134,17 +156,19 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
     return () => { cancelled = true; };
   }, [pdfDoc, currentPage, viewportTick, isFullscreen]);
 
-  // Bump the tick on container resize so the page re-fits cleanly. ResizeObserver
-  // handles desktop drags and the iOS Safari address-bar collapse on scroll.
+  // Re-render on resize, but ONLY when the WIDTH changes (or when in fullscreen,
+  // where height matters for contain-fit). This is the key fix for the "content
+  // shifts while scrolling" bug: on mobile, scrolling collapses the browser
+  // chrome and changes the height by ~60-80px every time — we must ignore those
+  // height-only changes in width-fit mode, otherwise the page rescales and jumps.
   useEffect(() => {
     if (!scrollRef.current) return;
-    let lastW = 0, lastH = 0;
+    let lastW = 0;
     const ro = new ResizeObserver(entries => {
       const r = entries[0]?.contentRect;
       if (!r) return;
-      // Avoid render thrash on tiny pixel deltas.
-      if (Math.abs(r.width - lastW) < 6 && Math.abs(r.height - lastH) < 6) return;
-      lastW = r.width; lastH = r.height;
+      if (Math.abs(r.width - lastW) < 4) return; // ignore height-only changes
+      lastW = r.width;
       setViewportTick(t => t + 1);
     });
     ro.observe(scrollRef.current);
@@ -152,6 +176,17 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
     window.addEventListener('orientationchange', onOri);
     return () => { ro.disconnect(); window.removeEventListener('orientationchange', onOri); };
   }, []);
+
+  // Re-run the contain-fit render when entering/leaving fullscreen, where the
+  // height suddenly matters (width may be unchanged so the ResizeObserver above
+  // wouldn't catch it).
+  useEffect(() => { setViewportTick(t => t + 1); }, [isFullscreen]);
+
+  // Always start each new page at the top so paging never lands you mid-scroll
+  // (another source of the "content shifts" feeling).
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }, [currentPage]);
 
   // Render thumbnail strip once per loaded document (low scale, ~120px wide).
   useEffect(() => {
@@ -265,8 +300,10 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
     const dy = t.clientY - start.y;
     const dt = Date.now() - start.t;
     touchStartRef.current = null;
-    // Reasonable swipe heuristic: > 50px horizontal, mostly horizontal, < 600ms.
-    if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.4 && dt < 600) {
+    // Conservative swipe heuristic. Horizontal travel must clearly dominate
+    // (>2× the vertical) so that reading a tall page by scrolling vertically
+    // never accidentally flips to the next page. Min 60px, under 600ms.
+    if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 2 && dt < 600) {
       goPage(dx > 0 ? -1 : 1);
     }
   };
@@ -379,26 +416,37 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
         </TBtn>
       </div>
 
-      {/* Canvas — captures touch swipes for prev/next. Centered both axes so
-          a page that's narrower or shorter than the viewport sits in the middle
-          instead of pinning to the top with a big grey gap below. */}
+      {/* Canvas scroll area.
+          • Inline (fit-width): vertical scroll, page pinned to the top so a tall
+            document reads top-to-bottom. Horizontal hidden (page == full width).
+          • Fullscreen (contain): no scroll, slide centred on both axes.
+          touchAction pan-y lets the browser handle vertical scroll natively
+          while our JS handles horizontal swipes for page changes. */}
       <div
         ref={scrollRef}
         onTouchStart={onTouchStart}
         onTouchEnd={onTouchEnd}
         style={{
-          flex: 1, overflow: 'hidden', display: 'flex',
-          justifyContent: 'center', alignItems: 'center',
+          flex: 1,
+          overflowY: isFullscreen ? 'hidden' : 'auto',
+          overflowX: 'hidden',
+          WebkitOverflowScrolling: 'touch' as any,
+          display: 'flex',
           padding: 8,
           background: '#1A1A1C',
           position: 'relative',
           touchAction: 'pan-y',
         }}
       >
+        {/* margin:auto centres the canvas both ways when it's smaller than the
+            container, but collapses to 0 when it's taller — so a tall page
+            stays scrollable to the very top (alignItems:center would clip it). */}
         <canvas ref={canvasRef} style={{
           boxShadow: '0 6px 28px rgba(0,0,0,0.55)',
           background: '#fff', borderRadius: 2,
           display: 'block',
+          flexShrink: 0,
+          margin: 'auto',
         }} />
 
         {/* First-time swipe hint on mobile */}
@@ -711,6 +759,7 @@ export default function LearnPage() {
   const { t } = useLanguage();
   const navigate = useNavigate();
   const { getCourse, getProgress } = useCourses();
+  const { isMobile } = useViewport();
 
   const course = courseId ? getCourse(courseId) : undefined;
   const [progress, setProgress] = useState<UserProgress | null>(null);
@@ -752,38 +801,55 @@ export default function LearnPage() {
     <div style={{
       maxWidth: 1200, margin: '0 auto', display: 'flex', flexDirection: 'column',
       // 100dvh follows the visible viewport on iOS Safari (collapsing address bar),
-      // 100vh is the fallback for older browsers.
-      height: 'calc(100dvh - 168px)' as any,
-      minHeight: 'calc(100vh - 168px)',
+      // 100vh is the fallback for older browsers. Mobile header is ~56px so the
+      // offset is smaller there, giving the viewer the most room possible.
+      height: (isMobile ? 'calc(100dvh - 96px)' : 'calc(100dvh - 168px)') as any,
+      minHeight: isMobile ? 'calc(100vh - 96px)' : 'calc(100vh - 168px)',
     }}>
 
-      {/* Breadcrumb + actions */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, paddingBottom: 12, borderBottom: `1px solid ${BORDER}` }}>
-        <div style={{ fontSize: 12, color: '#6B7280', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '60%' }}>
-          {course.title} / {lesson.title}
+      {/* Breadcrumb + actions — compact icon row on mobile */}
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        marginBottom: isMobile ? 10 : 16,
+        paddingBottom: isMobile ? 8 : 12,
+        borderBottom: `1px solid ${BORDER}`,
+        gap: 10,
+      }}>
+        <div style={{
+          fontSize: isMobile ? 13 : 12, color: '#374151', fontWeight: 600,
+          overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+          flex: 1, minWidth: 0,
+        }}>
+          {lesson.title}
         </div>
-        <div style={{ display: 'flex', gap: 10, flexShrink: 0 }}>
+        <div style={{ display: 'flex', gap: isMobile ? 6 : 10, flexShrink: 0 }}>
           <button
             onClick={() => navigate(`/student/courses/${courseId}`)}
-            style={{ padding: '8px 16px', borderRadius: 8, border: `1px solid ${BORDER}`, background: '#fff', color: '#6B7280', cursor: 'pointer', fontSize: 13, fontWeight: 500 }}
-            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = BLUE; (e.currentTarget as HTMLButtonElement).style.color = BLUE; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = BORDER; (e.currentTarget as HTMLButtonElement).style.color = '#6B7280'; }}
+            title="Вернуться к курсу"
+            style={{
+              padding: isMobile ? '8px 12px' : '8px 16px',
+              borderRadius: 8, border: `1px solid ${BORDER}`, background: '#fff',
+              color: '#6B7280', cursor: 'pointer', fontSize: 13, fontWeight: 500,
+              whiteSpace: 'nowrap',
+            }}
           >
-            Вернуться назад
+            {isMobile ? '← Назад' : 'Вернуться назад'}
           </button>
           <button
             onClick={() => navigate(`/student/test/${courseId}`)}
-            style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: BLUE, color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
-            onMouseEnter={e => (e.currentTarget.style.opacity = '0.9')}
-            onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+            style={{
+              padding: isMobile ? '8px 12px' : '8px 16px',
+              borderRadius: 8, border: 'none', background: BLUE, color: '#fff',
+              cursor: 'pointer', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
+            }}
           >
-            К тестированию
+            {isMobile ? 'К тесту' : 'К тестированию'}
           </button>
         </div>
       </div>
 
       {/* Viewer */}
-      <div style={{ flex: 1, borderRadius: 12, border: `1px solid ${BORDER}`, overflow: 'hidden', position: 'relative', marginBottom: 16 }}>
+      <div style={{ flex: 1, borderRadius: 12, border: `1px solid ${BORDER}`, overflow: 'hidden', position: 'relative', marginBottom: isMobile ? 10 : 16, minHeight: 0 }}>
 
         {/* YouTube */}
         {lesson.type === 'video' && youtubeId && (
@@ -825,15 +891,13 @@ export default function LearnPage() {
       </div>
 
       {/* Prev / Next lesson */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexShrink: 0 }}>
         <button
           onClick={() => prevLesson && navigate(`/student/learn/${courseId}/${prevLesson.id}`)}
           disabled={!prevLesson}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 20px', borderRadius: 8, border: `1px solid ${prevLesson ? BORDER : '#F0F3FA'}`, background: '#fff', color: prevLesson ? '#374151' : '#D1D5DB', cursor: prevLesson ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 500 }}
-          onMouseEnter={e => { if (prevLesson) { (e.currentTarget as HTMLButtonElement).style.borderColor = BLUE; (e.currentTarget as HTMLButtonElement).style.color = BLUE; } }}
-          onMouseLeave={e => { if (prevLesson) { (e.currentTarget as HTMLButtonElement).style.borderColor = BORDER; (e.currentTarget as HTMLButtonElement).style.color = '#374151'; } }}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: isMobile ? '9px 14px' : '10px 20px', borderRadius: 8, border: `1px solid ${prevLesson ? BORDER : '#F0F3FA'}`, background: '#fff', color: prevLesson ? '#374151' : '#D1D5DB', cursor: prevLesson ? 'pointer' : 'not-allowed', fontSize: 13, fontWeight: 500, whiteSpace: 'nowrap' }}
         >
-          <IcChevronLeft size={15} color="currentColor" /> Предыдущий
+          <IcChevronLeft size={15} color="currentColor" /> {isMobile ? 'Назад' : 'Предыдущий'}
         </button>
 
         <div style={{ flex: 1 }} />
@@ -841,18 +905,14 @@ export default function LearnPage() {
         {nextLesson ? (
           <button
             onClick={() => navigate(`/student/learn/${courseId}/${nextLesson.id}`)}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 24px', borderRadius: 8, border: 'none', background: '#10B981', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
-            onMouseEnter={e => (e.currentTarget.style.opacity = '0.9')}
-            onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: isMobile ? '9px 14px' : '10px 24px', borderRadius: 8, border: 'none', background: '#10B981', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
           >
-            Следующий материал <IcChevronRight size={15} color="#fff" />
+            {isMobile ? 'Далее' : 'Следующий материал'} <IcChevronRight size={15} color="#fff" />
           </button>
         ) : (
           <button
             onClick={() => navigate(`/student/courses/${courseId}`)}
-            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '10px 24px', borderRadius: 8, border: 'none', background: '#10B981', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}
-            onMouseEnter={e => (e.currentTarget.style.opacity = '0.9')}
-            onMouseLeave={e => (e.currentTarget.style.opacity = '1')}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, padding: isMobile ? '9px 16px' : '10px 24px', borderRadius: 8, border: 'none', background: '#10B981', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}
           >
             Завершить
           </button>
