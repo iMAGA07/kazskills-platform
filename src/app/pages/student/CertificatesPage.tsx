@@ -70,7 +70,7 @@ export default function CertificatesPage() {
       <div style={{ marginBottom: 24 }}>
         <h1 style={{ margin: '0 0 4px', color: '#0F1629' }}>Протоколы проверки знаний</h1>
         <p style={{ color: MUTED, margin: 0, fontSize: 13.5 }}>
-          После успешной сдачи по каждому курсу формируется официальный протокол. Скачайте его в формате Word.
+          После успешной сдачи по каждому курсу формируется официальный протокол. Скачайте его в формате PDF.
         </p>
       </div>
 

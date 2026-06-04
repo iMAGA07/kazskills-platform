@@ -273,13 +273,10 @@ export async function downloadProtocol(args: {
     orgFullName: user.organization || 'ТОО «____________»',
     protocolNo: number,
   };
-  const doc = new Document({ sections: [{ children: buildProtocolChildren(type, data) }] });
-  const blob = await Packer.toBlob(doc);
-  download(blob, `Протокол_${formatProtocolNo(number)}_${safeName(user.name)}_${fileDate()}.docx`);
+  await renderProtocolsPdf([{ type, data }], `Протокол_${formatProtocolNo(number)}_${safeName(user.name)}_${fileDate()}.pdf`);
 }
 
-/** Generate one Word file with a protocol page per passed course (used by the
- *  rep cabinet / admin to print everything for one employee at once). */
+/** Generate ONE PDF with a protocol page per passed course (rep cabinet / admin). */
 export async function downloadProtocolsBundle(args: {
   user: { id: string; name: string; position?: string; organization?: string; requestNumber?: string };
   courses: { id: string; title: string }[];
@@ -287,19 +284,141 @@ export async function downloadProtocolsBundle(args: {
   const { user, courses } = args;
   if (courses.length === 0) return;
   const groupKey = protocolGroupKey(user);
-  const sections = [] as any[];
+  const pages: { type: ProtocolType; data: ProtocolData }[] = [];
   for (const course of courses) {
     const type = protocolTypeForCourse(course.title);
     const number = await fetchProtocolNumber(groupKey, course.id);
-    const children = buildProtocolChildren(type, {
+    pages.push({ type, data: {
       fio: user.name,
       position: user.position || '—',
       orgFullName: user.organization || 'ТОО «____________»',
       protocolNo: number,
-    });
-    sections.push({ children });
+    }});
   }
-  const doc = new Document({ sections });
-  const blob = await Packer.toBlob(doc);
-  download(blob, `Протоколы_${safeName(user.name)}_${fileDate()}.docx`);
+  await renderProtocolsPdf(pages, `Протоколы_${safeName(user.name)}_${fileDate()}.pdf`);
+}
+
+// ─── PDF generation (HTML → canvas → PDF) ──────────────────────────────────────
+const dataUrl = (b64: string) => `data:image/png;base64,${b64}`;
+function esc(s: string) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+interface TypeConfig {
+  appendix: string;
+  title: (no: string) => string;
+  subtitle?: string;
+  introLines: (date: string) => string[];
+  description?: (org: string) => string[];
+  columns: string[];
+  row: (d: ProtocolData) => string[];
+}
+
+const TYPE_CFG: Record<ProtocolType, TypeConfig> = {
+  biot: {
+    appendix: 'Приложение 2 к Правилам и срокам проведения обучения, инструктирования и проверок знаний по вопросам безопасности и охраны труда работников, руководителей и лиц, ответственных за обеспечение безопасности и охраны труда',
+    title: (no) => `Протокол № ${no}`,
+    subtitle: 'Заседания экзаменационной комиссии по проверке знаний по безопасности и охране труда работников',
+    introLines: (date) => [
+      `${date} Комиссия в составе:`,
+      `Председатель: директор — ${CHAIRMAN}`,
+      `Члены комиссии: эксперт — ${MEMBER_1}, преподаватель — ${MEMBER_2}`,
+      'На основании приказа от «30» января 2026 г. №03/26 приняла экзамен и установила:',
+      'Вид проверки: первичный',
+    ],
+    columns: ['№п/п', 'Фамилия, имя, отчество (при его наличии)', 'Должность', 'Наименование организации', 'Отметка о проверке знаний (прошёл, не прошёл)', 'Примеч.'],
+    row: (d) => ['1', d.fio, d.position || '—', d.orgFullName, 'прошёл', '—'],
+  },
+  pb: {
+    appendix: 'Приложение 4 к Правилам подготовки, переподготовки и проверки знаний руководителей, специалистов и работников в области промышленной безопасности',
+    title: (no) => `ПРОТОКОЛ № ${no}`,
+    introLines: (date) => [
+      `${date} Комиссия в составе:`,
+      `Председатель: ${CHAIRMAN}`,
+      `Члены комиссии: ${MEMBER_1}, ${MEMBER_2}`,
+    ],
+    description: (org) => [
+      'Провели проверку знаний в объёме требований промышленной безопасности, установленных Законом РК «О гражданской защите», «Правил обеспечения промышленной безопасности» и нормативными правовыми актами Республики Казахстан:',
+      `У сотрудника компании ${org}`,
+      'По курсу «Промышленная безопасность на опасных производственных объектах» установили:',
+    ],
+    columns: ['№п/п', 'Фамилия, имя, отчество (при его наличии)', 'Должность', 'Образование', 'Заключение комиссии (сдал, не сдал)'],
+    row: (d) => ['1', d.fio, d.position || '—', d.education || 'Среднее', 'Сдал'],
+  },
+  ptm: {
+    appendix: 'Приложение 5 к Правилам обучения работников организаций и населения мерам пожарной безопасности и требованиям к содержанию учебных программ по обучению мерам пожарной безопасности',
+    title: (no) => `Протокол № ${no}`,
+    subtitle: 'заседания квалификационной комиссии по проверке знаний по пожарной безопасности в объёме пожарно-технического минимума',
+    introLines: (date) => [
+      `${date}`,
+      'В соответствии с приказом № 05/26 от 30.01.2026 года квалификационная комиссия в составе:',
+      `Председатель: директор — ${CHAIRMAN}`,
+      `Члены комиссии: эксперт — ${MEMBER_1}, преподаватель — ${MEMBER_2}`,
+      'приняла экзамен по пожарной безопасности в объёме пожарно-технического минимума и установила следующие результаты:',
+    ],
+    columns: ['№п/п', 'Фамилия, имя, отчество (при его наличии)', 'Должность', 'Организация', 'Отметка о проверке знаний (прошёл, не прошёл)', 'Подпись'],
+    row: (d) => ['1', d.fio, d.position || '—', d.orgFullName, 'прошёл', ''],
+  },
+};
+
+function protocolHtml(type: ProtocolType, d: ProtocolData): string {
+  const cfg = TYPE_CFG[type];
+  const date = ruDate(d.date ?? new Date());
+  const no = formatProtocolNo(d.protocolNo);
+  const intro = cfg.introLines(date).map(l => `<div style="margin-bottom:4px;">${esc(l)}</div>`).join('');
+  const desc = cfg.description ? cfg.description(d.orgFullName).map(l => `<div style="margin-bottom:4px;">${esc(l)}</div>`).join('') : '';
+  const ths = cfg.columns.map(c => `<th style="border:1px solid #000;padding:6px;font-size:11px;font-weight:bold;text-align:center;vertical-align:middle;background:#eef2f8;">${esc(c)}</th>`).join('');
+  const tds = cfg.row(d).map((v, i) => `<td style="border:1px solid #000;padding:8px 6px;font-size:12px;text-align:${i === 0 ? 'center' : 'left'};vertical-align:middle;">${esc(v)}</td>`).join('');
+
+  return `
+  <div style="width:720px;box-sizing:border-box;padding:40px 44px;background:#fff;color:#000;font-family:'Times New Roman',Georgia,serif;font-size:13px;line-height:1.45;">
+    <div style="font-size:10px;font-style:italic;text-align:right;margin-bottom:18px;line-height:1.35;">${esc(cfg.appendix)}</div>
+    <div style="text-align:center;font-size:18px;font-weight:bold;margin-bottom:8px;">${esc(cfg.title(no))}</div>
+    ${cfg.subtitle ? `<div style="text-align:center;font-weight:bold;margin-bottom:8px;">${esc(cfg.subtitle)}</div>` : ''}
+    <div style="text-align:center;font-weight:bold;margin-bottom:16px;">${esc(TRAINING_ORG)}</div>
+    ${intro}
+    ${desc ? `<div style="margin-top:6px;">${desc}</div>` : ''}
+    <table style="width:100%;border-collapse:collapse;margin-top:14px;">
+      <thead><tr>${ths}</tr></thead>
+      <tbody><tr>${tds}</tr></tbody>
+    </table>
+    <div style="position:relative;margin-top:34px;height:140px;">
+      <div style="margin-bottom:18px;">Председатель комиссии:&nbsp;&nbsp;&nbsp;${esc(CHAIRMAN)}&nbsp;&nbsp;<img src="${dataUrl(SIG_CHAIR_B64)}" style="height:34px;vertical-align:middle;"/></div>
+      <div style="margin-bottom:18px;">Члены комиссии:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${esc(MEMBER_1)}&nbsp;&nbsp;<img src="${dataUrl(SIG_M1_B64)}" style="height:40px;vertical-align:middle;"/></div>
+      <div>Члены комиссии:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${esc(MEMBER_2)}&nbsp;&nbsp;<img src="${dataUrl(SIG_M2_B64)}" style="height:34px;vertical-align:middle;"/></div>
+      <img src="${dataUrl(STAMP_B64)}" style="position:absolute;left:300px;top:-6px;width:150px;height:${Math.round(150 * STAMP_H / STAMP_W)}px;opacity:0.92;"/>
+    </div>
+  </div>`;
+}
+
+async function renderProtocolsPdf(pages: { type: ProtocolType; data: ProtocolData }[], filename: string): Promise<void> {
+  const [{ jsPDF }, html2canvasMod] = await Promise.all([
+    import('jspdf'),
+    import('html2canvas'),
+  ]);
+  const html2canvas = (html2canvasMod as any).default ?? html2canvasMod;
+
+  const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+  const pageW = pdf.internal.pageSize.getWidth();   // 210
+  const pageH = pdf.internal.pageSize.getHeight();  // 297
+  const margin = 8;
+
+  for (let i = 0; i < pages.length; i++) {
+    const host = document.createElement('div');
+    host.style.cssText = 'position:fixed;left:-10000px;top:0;z-index:-1;';
+    host.innerHTML = protocolHtml(pages[i].type, pages[i].data);
+    document.body.appendChild(host);
+    const node = host.firstElementChild as HTMLElement;
+    try {
+      const canvas = await html2canvas(node, { scale: 2, backgroundColor: '#ffffff', useCORS: true });
+      const imgW = pageW - margin * 2;
+      const imgH = (canvas.height / canvas.width) * imgW;
+      const img = canvas.toDataURL('image/jpeg', 0.95);
+      if (i > 0) pdf.addPage();
+      pdf.addImage(img, 'JPEG', margin, margin, imgW, Math.min(imgH, pageH - margin * 2));
+    } finally {
+      document.body.removeChild(host);
+    }
+  }
+  pdf.save(filename);
 }
