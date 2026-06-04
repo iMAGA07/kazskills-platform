@@ -34,6 +34,10 @@ const EMPTY_FORM: FormData = {
   assignedCourses: [],
 };
 
+// Auto-generate a 6-digit login and 4-digit password (same style as batch).
+function genLogin6() { return String(Math.floor(100000 + Math.random() * 900000)); }
+function genPassword4() { return String(Math.floor(1000 + Math.random() * 9000)); }
+
 const ROLE_META: Record<string, { label: string; color: string; bg: string }> = {
   representative: { label: 'Представитель', color: '#B45309', bg: '#FEF3C7' },
   admin:   { label: 'Администратор', color: '#2B5CE6', bg: '#EBF1FE' },
@@ -218,6 +222,10 @@ function UserFormModal({ open, onClose, editUser, organizations }: {
       } else {
         setForm({
           ...EMPTY_FORM,
+          // Prefill a ready-to-use login + password so the admin never gets
+          // stuck on "what do I put here" — they can overwrite if they want.
+          email: genLogin6(),
+          password: genPassword4(),
           // On a tenant subdomain, auto-bind the new user to that org.
           organization: tenantOrg ? tenantOrg.fullName : '',
         });
@@ -236,10 +244,11 @@ function UserFormModal({ open, onClose, editUser, organizations }: {
   const validate = () => {
     const e: Partial<Record<keyof FormData, string>> = {};
     if (!form.name.trim()) e.name = 'Обязательное поле';
-    if (!form.email.trim()) e.email = 'Обязательное поле';
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = 'Некорректный email';
+    // Login (stored in `email`) is required but is prefilled, so this never
+    // blocks the admin. Email format is NOT enforced — a numeric login like
+    // "190408" is valid (matches the batch-created accounts).
+    if (!form.email.trim()) e.email = 'Введите логин (email или номер)';
     if (!editUser && !form.password.trim()) e.password = 'Обязательное поле';
-    else if (!editUser && form.password.length < 6) e.password = 'Минимум 6 символов';
     if (!form.organization.trim()) e.organization = 'Обязательное поле';
     setErrors(e);
     return Object.keys(e).length === 0;
@@ -353,18 +362,27 @@ function UserFormModal({ open, onClose, editUser, organizations }: {
                 {errors.name && <span style={{ fontSize: '11.5px', color: '#DC2626' }}>{errors.name}</span>}
               </Field>
 
+              {/* Credentials: login + password. Both prefilled with generated
+                  values so the admin can just submit. Login accepts email OR
+                  a number. */}
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px' }}>
-                <Field label="Email" required>
-                  <input
-                    type="email" value={form.email} onChange={e => set('email', e.target.value)}
-                    placeholder="user@company.kz"
-                    style={{ ...inputStyle, borderColor: errors.email ? '#DC2626' : '#E3E7F0' }}
-                    onFocus={e => (e.target.style.borderColor = errors.email ? '#DC2626' : '#2B5CE6')}
-                    onBlur={e => (e.target.style.borderColor = errors.email ? '#DC2626' : '#E3E7F0')}
-                  />
+                <Field label="Логин (email или номер)" required>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <input
+                      type="text" value={form.email} onChange={e => set('email', e.target.value)}
+                      placeholder="напр. 190408 или user@company.kz"
+                      style={{ ...inputStyle, flex: 1, borderColor: errors.email ? '#DC2626' : '#E3E7F0' }}
+                      onFocus={e => (e.target.style.borderColor = errors.email ? '#DC2626' : '#2B5CE6')}
+                      onBlur={e => (e.target.style.borderColor = errors.email ? '#DC2626' : '#E3E7F0')}
+                    />
+                    {!editUser && (
+                      <button type="button" onClick={() => set('email', genLogin6())} title="Сгенерировать логин"
+                        style={{ flexShrink: 0, width: 38, borderRadius: 8, border: '1.5px solid #E3E7F0', background: '#F8FAFD', cursor: 'pointer', fontSize: 15 }}>↻</button>
+                    )}
+                  </div>
                   {errors.email && <span style={{ fontSize: '11.5px', color: '#DC2626' }}>{errors.email}</span>}
                 </Field>
-                <Field label="Телефон">
+                <Field label="Телефон (необязательно)">
                   <input
                     value={form.phone} onChange={e => set('phone', e.target.value)}
                     placeholder="+7 (700) 000-00-00"
@@ -375,26 +393,32 @@ function UserFormModal({ open, onClose, editUser, organizations }: {
                 </Field>
               </div>
 
-              <Field label={editUser ? 'Пароль (оставьте пустым для сохранения)' : 'Пароль'} required={!editUser}>
-                <div style={{ position: 'relative' }}>
-                  <input
-                    type={showPass ? 'text' : 'password'}
-                    value={form.password} onChange={e => set('password', e.target.value)}
-                    placeholder="Минимум 6 символов"
-                    style={{ ...inputStyle, paddingRight: '40px', borderColor: errors.password ? '#DC2626' : '#E3E7F0' }}
-                    onFocus={e => (e.target.style.borderColor = errors.password ? '#DC2626' : '#2B5CE6')}
-                    onBlur={e => (e.target.style.borderColor = errors.password ? '#DC2626' : '#E3E7F0')}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPass(p => !p)}
-                    style={{
-                      position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
-                      background: 'none', border: 'none', cursor: 'pointer', padding: 2,
-                    }}
-                  >
-                    <IcLock size={14} color={showPass ? '#2B5CE6' : '#9CA3AF'} />
-                  </button>
+              <Field label={editUser ? 'Пароль (оставьте как есть для сохранения)' : 'Пароль'} required={!editUser}>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <div style={{ position: 'relative', flex: 1 }}>
+                    <input
+                      type={showPass ? 'text' : 'password'}
+                      value={form.password} onChange={e => set('password', e.target.value)}
+                      placeholder="Пароль"
+                      style={{ ...inputStyle, paddingRight: '40px', borderColor: errors.password ? '#DC2626' : '#E3E7F0' }}
+                      onFocus={e => (e.target.style.borderColor = errors.password ? '#DC2626' : '#2B5CE6')}
+                      onBlur={e => (e.target.style.borderColor = errors.password ? '#DC2626' : '#E3E7F0')}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPass(p => !p)}
+                      style={{
+                        position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)',
+                        background: 'none', border: 'none', cursor: 'pointer', padding: 2,
+                      }}
+                    >
+                      <IcLock size={14} color={showPass ? '#2B5CE6' : '#9CA3AF'} />
+                    </button>
+                  </div>
+                  {!editUser && (
+                    <button type="button" onClick={() => set('password', genPassword4())} title="Сгенерировать пароль"
+                      style={{ flexShrink: 0, width: 38, borderRadius: 8, border: '1.5px solid #E3E7F0', background: '#F8FAFD', cursor: 'pointer', fontSize: 15 }}>↻</button>
+                  )}
                 </div>
                 {errors.password && <span style={{ fontSize: '11.5px', color: '#DC2626' }}>{errors.password}</span>}
               </Field>
