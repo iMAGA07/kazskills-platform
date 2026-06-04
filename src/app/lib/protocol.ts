@@ -382,11 +382,26 @@ function protocolHtml(type: ProtocolType, d: ProtocolData): string {
       <thead><tr>${ths}</tr></thead>
       <tbody><tr>${tds}</tr></tbody>
     </table>
-    <div style="position:relative;margin-top:34px;height:140px;">
-      <div style="margin-bottom:18px;">Председатель комиссии:&nbsp;&nbsp;&nbsp;${esc(CHAIRMAN)}&nbsp;&nbsp;<img src="${dataUrl(SIG_CHAIR_B64)}" style="height:34px;vertical-align:middle;"/></div>
-      <div style="margin-bottom:18px;">Члены комиссии:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${esc(MEMBER_1)}&nbsp;&nbsp;<img src="${dataUrl(SIG_M1_B64)}" style="height:40px;vertical-align:middle;"/></div>
-      <div>Члены комиссии:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;${esc(MEMBER_2)}&nbsp;&nbsp;<img src="${dataUrl(SIG_M2_B64)}" style="height:34px;vertical-align:middle;"/></div>
-      <img src="${dataUrl(STAMP_B64)}" style="position:absolute;left:300px;top:-6px;width:150px;height:${Math.round(150 * STAMP_H / STAMP_W)}px;opacity:0.92;"/>
+    <div style="position:relative;margin-top:34px;min-height:180px;">
+      <!-- Stamp sits behind; signatures (z-index 1) show above it -->
+      <img src="${dataUrl(STAMP_B64)}" style="position:absolute;left:330px;top:40px;width:150px;height:${Math.round(150 * STAMP_H / STAMP_W)}px;opacity:0.85;z-index:0;"/>
+      <table style="border-collapse:collapse;position:relative;z-index:1;">
+        <tr>
+          <td style="padding:8px 0;white-space:nowrap;vertical-align:middle;">Председатель комиссии:</td>
+          <td style="padding:8px 18px;white-space:nowrap;vertical-align:middle;">${esc(CHAIRMAN)}</td>
+          <td style="padding:8px 0;vertical-align:middle;"><img src="${dataUrl(SIG_CHAIR_B64)}" style="height:34px;display:block;"/></td>
+        </tr>
+        <tr>
+          <td style="padding:8px 0;white-space:nowrap;vertical-align:middle;">Члены комиссии:</td>
+          <td style="padding:8px 18px;white-space:nowrap;vertical-align:middle;">${esc(MEMBER_1)}</td>
+          <td style="padding:8px 0;vertical-align:middle;"><img src="${dataUrl(SIG_M1_B64)}" style="height:40px;display:block;"/></td>
+        </tr>
+        <tr>
+          <td style="padding:8px 0;white-space:nowrap;vertical-align:middle;">Члены комиссии:</td>
+          <td style="padding:8px 18px;white-space:nowrap;vertical-align:middle;">${esc(MEMBER_2)}</td>
+          <td style="padding:8px 0;vertical-align:middle;"><img src="${dataUrl(SIG_M2_B64)}" style="height:34px;display:block;"/></td>
+        </tr>
+      </table>
     </div>
   </div>`;
 }
