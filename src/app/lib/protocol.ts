@@ -1,8 +1,15 @@
 import {
   Document, Packer, Paragraph, Table, TableRow, TableCell,
-  TextRun, AlignmentType, WidthType, BorderStyle, HeadingLevel,
+  TextRun, AlignmentType, WidthType, BorderStyle,
+  ImageRun, HorizontalPositionRelativeFrom, VerticalPositionRelativeFrom, TextWrappingType,
 } from 'docx';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import {
+  STAMP_B64, STAMP_W, STAMP_H,
+  SIG_CHAIR_B64, SIG_CHAIR_W, SIG_CHAIR_H,
+  SIG_M1_B64, SIG_M1_W, SIG_M1_H,
+  SIG_M2_B64, SIG_M2_W, SIG_M2_H,
+} from './protocolAssets';
 
 const BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3ed1835c`;
 
@@ -93,11 +100,50 @@ function p(text: string, o: { bold?: boolean; center?: boolean; size?: number; i
     children: [new TextRun({ text, bold: o.bold, italics: o.italics, size: o.size ?? 22 })],
   });
 }
+// ─── Stamp + signature images ──────────────────────────────────────────────────
+function b64ToBytes(b64: string): Uint8Array {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+function sigImage(b64: string, w: number, h: number, dispH = 44): ImageRun {
+  const dispW = Math.max(1, Math.round((w * dispH) / h));
+  return new ImageRun({ type: 'png', data: b64ToBytes(b64), transformation: { width: dispW, height: dispH } });
+}
+function stampFloating(): ImageRun {
+  const dispW = 150;
+  const dispH = Math.round((STAMP_H * dispW) / STAMP_W);
+  return new ImageRun({
+    type: 'png',
+    data: b64ToBytes(STAMP_B64),
+    transformation: { width: dispW, height: dispH },
+    floating: {
+      // Centre-right over the signature block, slightly above the first line.
+      horizontalPosition: { relative: HorizontalPositionRelativeFrom.PAGE, offset: 3300000 },
+      verticalPosition: { relative: VerticalPositionRelativeFrom.PARAGRAPH, offset: -150000 },
+      allowOverlap: true,
+      behindDocument: false,
+      wrap: { type: TextWrappingType.NONE },
+    },
+  });
+}
+
 function signatures(): Paragraph[] {
   return [
-    new Paragraph({ spacing: { before: 300, after: 60 }, children: [new TextRun({ text: `Председатель комиссии:               ${CHAIRMAN}`, size: 22 })] }),
-    new Paragraph({ spacing: { after: 60 }, children: [new TextRun({ text: `Члены комиссии:                          ${MEMBER_1}`, size: 22 })] }),
-    new Paragraph({ children: [new TextRun({ text: `                                                       ${MEMBER_2}`, size: 22 })] }),
+    new Paragraph({ spacing: { before: 320, after: 120 }, children: [
+      new TextRun({ text: `Председатель комиссии:     ${CHAIRMAN}     `, size: 22 }),
+      sigImage(SIG_CHAIR_B64, SIG_CHAIR_W, SIG_CHAIR_H),
+      stampFloating(),
+    ]}),
+    new Paragraph({ spacing: { after: 120 }, children: [
+      new TextRun({ text: `Члены комиссии:               ${MEMBER_1}     `, size: 22 }),
+      sigImage(SIG_M1_B64, SIG_M1_W, SIG_M1_H),
+    ]}),
+    new Paragraph({ children: [
+      new TextRun({ text: `Члены комиссии:               ${MEMBER_2}     `, size: 22 }),
+      sigImage(SIG_M2_B64, SIG_M2_W, SIG_M2_H),
+    ]}),
   ];
 }
 
