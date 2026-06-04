@@ -1,7 +1,8 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { useUsers, type ManagedUser, type BatchUserInput } from '../../context/UsersContext';
-import { useCourses, UserProgress, sortCourses, orderForAssignment } from '../../context/CoursesContext';
+import { useCourses, UserProgress, sortCourses } from '../../context/CoursesContext';
+import { CourseAssignPicker } from '../../components/shared/CourseAssignPicker';
 import { getCurrentOrganization } from '../../lib/organization';
 import { useOrganizationsContext } from '../../context/OrganizationsContext';
 import {
@@ -876,56 +877,15 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
                   </div>
 
                   {courseMode === 'all' ? (
-                    /* Global course selection — pinned ("ОСН.") on top, searchable */
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {publishedCourses.length > 6 && (
-                        <input
-                          value={batchCourseSearch}
-                          onChange={e => setBatchCourseSearch(e.target.value)}
-                          placeholder="Поиск курса…"
-                          style={{ ...inputStyle, marginBottom: 2 }}
-                        />
-                      )}
-                      <div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 2 }}>
-                        Отмеченные курсы выделяются синим и поднимаются наверх.
-                      </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 300, overflowY: 'auto', paddingRight: 2 }}>
-                        {orderForAssignment(publishedCourses, globalCourses)
-                          .filter(c => batchCourseSearch.trim() === '' || c.title.toLowerCase().includes(batchCourseSearch.toLowerCase()))
-                          .map(course => {
-                            const checked = globalCourses.includes(course.id);
-                            return (
-                              <div
-                                key={course.id}
-                                onClick={() => toggleGlobalCourse(course.id)}
-                                style={{
-                                  display: 'flex', alignItems: 'center', gap: 10,
-                                  padding: '10px 12px', borderRadius: 8,
-                                  border: `1.5px solid ${checked ? BLUE : '#E3E7F0'}`,
-                                  background: checked ? '#EBF1FE' : '#fff',
-                                  cursor: 'pointer', textAlign: 'left', transition: 'all 0.12s',
-                                }}
-                              >
-                                <div style={{
-                                  width: 18, height: 18, borderRadius: 5, flexShrink: 0,
-                                  border: `2px solid ${checked ? BLUE : '#D1D5DB'}`,
-                                  background: checked ? BLUE : '#fff',
-                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                }}>
-                                  {checked && <IcCheck size={11} color="#fff" />}
-                                </div>
-                                <span style={{ fontSize: 13, color: checked ? NAVY : '#374151', fontWeight: checked ? 500 : 400, flex: 1, minWidth: 0 }}>
-                                  {course.title}
-                                </span>
-                                <span style={{ fontSize: 11, color: '#9CA3AF', flexShrink: 0 }}>
-                                  {course.lessons.length} мат.
-                                </span>
-                              </div>
-                            );
-                          })}
-                      </div>
+                    /* Global course selection — selected rise to top, drag to reorder */
+                    <div>
+                      <CourseAssignPicker
+                        courses={publishedCourses}
+                        value={globalCourses}
+                        onChange={setGlobalCourses}
+                      />
                       {globalCourses.length > 0 && (
-                        <div style={{ fontSize: 12, color: BLUE, marginTop: 4 }}>
+                        <div style={{ fontSize: 12, color: BLUE, marginTop: 6 }}>
                           Выбрано курсов: {globalCourses.length} — будут назначены всем {employees.length} сотрудникам
                         </div>
                       )}
@@ -948,37 +908,12 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
                             </div>
                             {emp.name || 'Сотрудник ' + (idx + 1)}
                           </div>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            {orderForAssignment(publishedCourses, emp.courses).map(course => {
-                              const checked = emp.courses.includes(course.id);
-                              return (
-                                <button
-                                  key={course.id}
-                                  type="button"
-                                  onClick={() => toggleEmployeeCourse(emp.id, course.id)}
-                                  style={{
-                                    display: 'flex', alignItems: 'center', gap: 8,
-                                    padding: '7px 10px', borderRadius: 6,
-                                    border: `1px solid ${checked ? BLUE : '#E3E7F0'}`,
-                                    background: checked ? '#EBF1FE' : '#fff',
-                                    cursor: 'pointer', textAlign: 'left', fontSize: 12,
-                                  }}
-                                >
-                                  <div style={{
-                                    width: 16, height: 16, borderRadius: 4, flexShrink: 0,
-                                    border: `2px solid ${checked ? BLUE : '#D1D5DB'}`,
-                                    background: checked ? BLUE : '#fff',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                  }}>
-                                    {checked && <IcCheck size={9} color="#fff" />}
-                                  </div>
-                                  <span style={{ color: checked ? NAVY : '#374151', fontWeight: checked ? 500 : 400 }}>
-                                    {course.title}
-                                  </span>
-                                </button>
-                              );
-                            })}
-                          </div>
+                          <CourseAssignPicker
+                            compact
+                            courses={publishedCourses}
+                            value={emp.courses}
+                            onChange={ids => setEmployees(prev => prev.map(e => e.id === emp.id ? { ...e, courses: ids } : e))}
+                          />
                         </div>
                       ))}
                     </div>

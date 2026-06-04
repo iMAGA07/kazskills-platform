@@ -106,7 +106,9 @@ export function orderForAssignment<T extends { id: string; title: string; pinned
   list: T[], assignedIds: string[],
 ): T[] {
   const pos = new Map(assignedIds.map((id, i) => [id, i]));
-  const selected = list.filter(c => pos.has(c.id)).sort((a, b) => (pos.get(b.id)! - pos.get(a.id)!));
+  // Selected first, kept in selection order (newest pick at the BOTTOM of the
+  // blue group); the rest below in canonical order.
+  const selected = list.filter(c => pos.has(c.id)).sort((a, b) => (pos.get(a.id)! - pos.get(b.id)!));
   const rest = sortCourses(list.filter(c => !pos.has(c.id)));
   return [...selected, ...rest];
 }
