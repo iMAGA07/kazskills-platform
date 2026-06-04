@@ -738,6 +738,49 @@ app.post("/make-server-3ed1835c/organizations/seed", async (c) => {
   }
 });
 
+// ─── PROTOCOL NUMBERS ─────────────────────────────────────────────────────────
+// A protocol number is shared by everyone in the same group (заявка) who took
+// the same course, and increments sequentially across all (group, course) pairs.
+//   • groupKey = request number (e.g. "002") when the user belongs to a заявка,
+//     otherwise "u<userId>" for a single user.
+// First request for a (group, course) assigns the next number; later requests
+// for the same pair return the same number (idempotent).
+app.post("/make-server-3ed1835c/protocol-number", requireAuth, async (c) => {
+  try {
+    const { groupKey, courseId } = await c.req.json();
+    if (!groupKey || !courseId) return c.json({ error: "groupKey and courseId required" }, 400);
+    const key = `protnum:${groupKey}:${courseId}`;
+    const existing = await kv.get(key);
+    if (typeof existing === "number") return c.json({ number: existing });
+
+    const counter = (await kv.get("protocol_counter")) as number | null;
+    const next = (typeof counter === "number" ? counter : 0) + 1;
+    await kv.set("protocol_counter", next);
+    await kv.set(key, next);
+    return c.json({ number: next });
+  } catch (err) {
+    console.log("Error in /protocol-number:", err);
+    return c.json({ error: `Failed to assign protocol number: ${err}` }, 500);
+  }
+});
+
+// GET /protocol-counter — current value (admin only); for setting a starting
+// offset use POST /protocol-counter { value }.
+app.get("/make-server-3ed1835c/protocol-counter", requireAuth, requireAdmin, async (c) => {
+  const counter = (await kv.get("protocol_counter")) as number | null;
+  return c.json({ value: typeof counter === "number" ? counter : 0 });
+});
+app.post("/make-server-3ed1835c/protocol-counter", requireAuth, requireAdmin, async (c) => {
+  try {
+    const { value } = await c.req.json();
+    if (typeof value !== "number" || value < 0) return c.json({ error: "value must be a non-negative number" }, 400);
+    await kv.set("protocol_counter", Math.floor(value));
+    return c.json({ value: Math.floor(value) });
+  } catch (err) {
+    return c.json({ error: `Failed to set counter: ${err}` }, 500);
+  }
+});
+
 // ─── ANALYTICS ────────────────────────────────────────────────────────────────
 
 // GET /analytics — summary stats (admin only)

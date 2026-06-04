@@ -3,7 +3,7 @@ import { Outlet, Navigate, useNavigate, useLocation } from 'react-router';
 import { LanguageSwitcher } from '../shared/LanguageSwitcher';
 import { useAuth } from '../../context/AuthContext';
 import { useUsers } from '../../context/UsersContext';
-import { IcBook, IcFileText, IcBell, IcCamera, IcLogout } from '../Icons';
+import { IcBook, IcFileText, IcBell, IcCamera, IcLogout, IcDocument } from '../Icons';
 import { useLanguage } from '../../context/LanguageContext';
 import { getOrganizationName, getCurrentOrganization, useOrganizations } from '../../lib/organization';
 import { PhotoCaptureModal } from '../shared/PhotoCaptureModal';
@@ -197,6 +197,25 @@ export function AppLayout() {
                 >
                   <IcFileText size={isMobile ? 18 : 16} color="currentColor" />
                   {!isMobile && <span>{t('nav.documents')}</span>}
+                </button>
+
+                <button
+                  onClick={() => navigate('/student/certificates')}
+                  title="Протоколы"
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: isMobile ? '9px' : '10px 16px',
+                    width: isMobile ? 38 : undefined, height: isMobile ? 38 : undefined,
+                    justifyContent: 'center',
+                    background: isActive('/student/certificates') ? '#EBF1FE' : 'transparent',
+                    border: 'none', borderRadius: '8px',
+                    color: isActive('/student/certificates') ? '#2B5CE6' : '#6B7280',
+                    cursor: 'pointer', fontSize: 14, fontWeight: 500,
+                    transition: 'all 0.15s', whiteSpace: 'nowrap', flexShrink: 0,
+                  }}
+                >
+                  <IcDocument size={isMobile ? 18 : 16} color="currentColor" />
+                  {!isMobile && <span>Протоколы</span>}
                 </button>
               </div>
             )}

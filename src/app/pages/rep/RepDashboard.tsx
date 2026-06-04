@@ -7,6 +7,8 @@ import { getCurrentOrganization, useOrganizations } from '../../lib/organization
 import { LanguageSwitcher } from '../../components/shared/LanguageSwitcher';
 import { InstructionModal } from '../../components/shared/InstructionModal';
 import { IcLogout, IcDownload, IcSearch, IcCheckCircle, IcClock, IcTeam, IcRefresh } from '../../components/Icons';
+import { toast } from '../../components/shared/Toast';
+import { downloadProtocolsBundle } from '../../lib/protocol';
 import {
   Document, Packer, Paragraph, Table, TableRow, TableCell,
   TextRun, HeadingLevel, AlignmentType, WidthType, BorderStyle,
@@ -219,17 +221,24 @@ export default function RepDashboard() {
     return new Document({ sections: [{ children }] });
   };
 
+  // Official protocols (Приложение 2/4/5) for each course the employee PASSED.
   const downloadOne = async (row: StudentRow) => {
-    const doc = buildProtocol([row], row.user.name);
-    const blob = await Packer.toBlob(doc);
-    const safe = row.user.name.replace(/[^a-zA-Zа-яА-Я0-9_-]+/g, '_').slice(0, 50);
-    downloadBlob(blob, `Протокол_${safe}_${fileDate()}.docx`);
+    const passedCourses = row.results.filter(r => r.status === 'passed').map(r => ({ id: r.courseId, title: r.title }));
+    if (passedCourses.length === 0) {
+      toast.error(`У сотрудника «${row.user.name}» нет сданных курсов.`);
+      return;
+    }
+    await downloadProtocolsBundle({
+      user: { id: row.user.id, name: row.user.name, position: row.user.position, organization: row.user.organization, requestNumber: row.user.requestNumber },
+      courses: passedCourses,
+    });
   };
+  // Summary of everyone (quick overview, not the official forms).
   const downloadAll = async () => {
     const subset = filtered.length ? filtered : rows;
     const doc = buildProtocol(subset, 'all');
     const blob = await Packer.toBlob(doc);
-    downloadBlob(blob, `Протокол_${(org?.displayName ?? 'организация')}_${fileDate()}.docx`);
+    downloadBlob(blob, `Сводка_${(org?.displayName ?? 'организация')}_${fileDate()}.docx`);
   };
 
   // ── Guards ──
@@ -298,7 +307,7 @@ export default function RepDashboard() {
               padding: '9px 16px', borderRadius: 9, border: 'none', background: NAVY,
               color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600,
             }}>
-              <IcDownload size={14} color="#fff" /> Протокол по всем
+              <IcDownload size={14} color="#fff" /> Сводка по всем
             </button>
           </div>
         </div>
