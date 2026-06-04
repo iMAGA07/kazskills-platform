@@ -64,6 +64,10 @@ export interface Course {
   test: TestConfig;
   /** Tenant slug this course belongs to. Undefined = global (visible to all tenants). */
   organizationSlug?: string;
+  /** Pinned ("main") courses sort to the top of every list/picker. */
+  pinned?: boolean;
+  /** Manual order within the pinned group (lower = higher). */
+  sortOrder?: number;
 }
 
 export interface CourseInput {
@@ -73,6 +77,23 @@ export interface CourseInput {
   lessons: Lesson[];
   test: TestConfig;
   organizationSlug?: string;
+  pinned?: boolean;
+  sortOrder?: number;
+}
+
+/**
+ * Canonical course ordering used by every list and assignment picker:
+ * pinned ("main") courses first (by their sortOrder), then the rest A→Z.
+ */
+export function sortCourses<T extends { title: string; pinned?: boolean; sortOrder?: number }>(list: T[]): T[] {
+  return [...list].sort((a, b) => {
+    if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+    if (a.pinned && b.pinned) {
+      const ao = a.sortOrder ?? 0, bo = b.sortOrder ?? 0;
+      if (ao !== bo) return ao - bo;
+    }
+    return a.title.localeCompare(b.title, 'ru');
+  });
 }
 
 // ─── Progress Types ───────────────────────────────────────────────────────────

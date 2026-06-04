@@ -45,7 +45,10 @@ export function PhotoCaptureModal({ open, onClose, onSaved, title, hint }: Props
     let cancelled = false;
     (async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' }, audio: false });
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 960 } },
+          audio: false,
+        });
         if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
         streamRef.current = stream;
         if (videoRef.current) {
@@ -86,12 +89,43 @@ export function PhotoCaptureModal({ open, onClose, onSaved, title, hint }: Props
     if (!videoRef.current || !canvasRef.current) return;
     const v = videoRef.current;
     const c = canvasRef.current;
-    const w = v.videoWidth || 640;
-    const h = v.videoHeight || 480;
-    c.width = w; c.height = h;
+    const vw = v.videoWidth || 640;
+    const vh = v.videoHeight || 480;
+
+    // Document photo is portrait 3×4 (width:height = 3:4 = 0.75). The preview
+    // shows a centred 3:4 crop (objectFit: cover), so we must capture the SAME
+    // centred crop — otherwise the saved shot includes the torso/sides that
+    // weren't visible in the frame ("смещается вбок").
+    const targetAspect = 3 / 4;
+    const videoAspect = vw / vh;
+    let cropW: number, cropH: number, cropX: number, cropY: number;
+    if (videoAspect > targetAspect) {
+      // video wider than 3:4 → crop the sides
+      cropH = vh;
+      cropW = Math.round(vh * targetAspect);
+      cropX = Math.round((vw - cropW) / 2);
+      cropY = 0;
+    } else {
+      // video taller than 3:4 → crop top/bottom
+      cropW = vw;
+      cropH = Math.round(vw / targetAspect);
+      cropX = 0;
+      cropY = Math.round((vh - cropH) / 2);
+    }
+
+    // Output at a fixed portrait size for a consistent 3×4 photo.
+    const outW = 600, outH = 800;
+    c.width = outW; c.height = outH;
     const ctx = c.getContext('2d');
     if (!ctx) return;
-    ctx.drawImage(v, 0, 0, w, h);
+    // Mirror horizontally so the saved photo matches the mirrored preview the
+    // user was looking at (selfie convention).
+    ctx.save();
+    ctx.translate(outW, 0);
+    ctx.scale(-1, 1);
+    ctx.drawImage(v, cropX, cropY, cropW, cropH, 0, 0, outW, outH);
+    ctx.restore();
+
     const data = c.toDataURL('image/jpeg', 0.92);
     setPreview(data);
     stopStream();
@@ -235,20 +269,29 @@ export function PhotoCaptureModal({ open, onClose, onSaved, title, hint }: Props
             <div style={{
               borderRadius: 12, overflow: 'hidden',
               border: '1px solid #E3E7F0', background: '#000',
-              aspectRatio: '4 / 3', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              width: 240, maxWidth: '100%', aspectRatio: '3 / 4', margin: '0 auto',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
-              <img src={preview} alt="preview" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+              <img src={preview} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             </div>
           ) : tab === 'camera' ? (
             <div style={{
               borderRadius: 12, overflow: 'hidden', position: 'relative',
               border: '1px solid #E3E7F0', background: '#0F1629',
-              aspectRatio: '4 / 3',
+              width: 240, maxWidth: '100%', aspectRatio: '3 / 4', margin: '0 auto',
             }}>
               <video
                 ref={videoRef} autoPlay playsInline muted
                 style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }}
               />
+              {/* 3×4 framing guide */}
+              {cameraReady && (
+                <div style={{
+                  position: 'absolute', inset: '8% 18%',
+                  border: '2px dashed rgba(255,255,255,0.55)', borderRadius: 8,
+                  pointerEvents: 'none',
+                }} />
+              )}
               {!cameraReady && !cameraError && (
                 <div style={{
                   position: 'absolute', inset: 0,

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useLanguage } from '../../context/LanguageContext';
-import { useCourses } from '../../context/CoursesContext';
+import { useCourses, sortCourses } from '../../context/CoursesContext';
 import {
   IcPlus, IcSearch, IcEdit, IcTrash,
   IcBook, IcCheckCircle, IcRefresh,
@@ -16,14 +16,20 @@ const RED   = '#DC2626';
 export default function AdminCoursesPage() {
   const { t } = useLanguage();
   const navigate = useNavigate();
-  const { courses, loading, error, refetch, deleteCourse } = useCourses();
+  const { courses, loading, error, refetch, deleteCourse, updateCourse } = useCourses();
   const [search, setSearch] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [confirmId, setConfirmId]   = useState<string | null>(null);
 
-  const filtered = courses.filter(c =>
+  const filtered = sortCourses(courses).filter(c =>
     search === '' || c.title.toLowerCase().includes(search.toLowerCase())
   );
+
+  const togglePin = async (course: typeof courses[number]) => {
+    try {
+      await updateCourse(course.id, { pinned: !course.pinned } as any);
+    } catch (e) { console.error('Pin toggle error:', e); }
+  };
 
   const handleDelete = async (id: string) => {
     if (confirmId !== id) { setConfirmId(id); return; }
@@ -170,7 +176,21 @@ export default function AdminCoursesPage() {
             onMouseLeave={e => (e.currentTarget as HTMLDivElement).style.background = 'transparent'}
           >
             {/* Title */}
-            <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{ minWidth: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+              {/* Pin ("main course") toggle — pinned float to the top everywhere */}
+              <button
+                onClick={() => togglePin(course)}
+                title={course.pinned ? 'Открепить (убрать из основных)' : 'Закрепить как основной (наверх)'}
+                style={{
+                  width: 30, height: 30, borderRadius: 7, flexShrink: 0,
+                  border: `1px solid ${course.pinned ? '#FCD34D' : BORDER}`,
+                  background: course.pinned ? '#FEF3C7' : '#fff',
+                  cursor: 'pointer', fontSize: 15, lineHeight: 1,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}
+              >
+                <span style={{ filter: course.pinned ? 'none' : 'grayscale(1)', opacity: course.pinned ? 1 : 0.45 }}>📌</span>
+              </button>
               <div style={{
                 width: 36, height: 36, borderRadius: '8px',
                 background: NAVY, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
@@ -178,8 +198,13 @@ export default function AdminCoursesPage() {
                 <IcBook size={17} color="#fff" />
               </div>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: '13.5px', fontWeight: 500, color: '#0F1629', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div style={{ fontSize: '13.5px', fontWeight: 500, color: '#0F1629', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'flex', alignItems: 'center', gap: 6 }}>
                   {course.title}
+                  {course.pinned && (
+                    <span style={{ fontSize: 10, fontWeight: 700, color: '#B45309', background: '#FEF3C7', padding: '1px 6px', borderRadius: 4, flexShrink: 0 }}>
+                      ОСНОВНОЙ
+                    </span>
+                  )}
                 </div>
                 <div style={{ fontSize: '11.5px', color: '#9CA3AF', marginTop: 2 }}>
                   {course.lessons.length} {course.lessons.length === 1 ? 'материал' : course.lessons.length < 5 ? 'материала' : 'материалов'}

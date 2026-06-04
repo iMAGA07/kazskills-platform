@@ -56,6 +56,10 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
   const stripRef     = useRef<HTMLDivElement>(null);
   const renderTask   = useRef<any>(null);
   const touchStartRef = useRef<{ x: number; y: number; t: number } | null>(null);
+  // Pinch / pan gesture state (refs so handlers don't need re-binding).
+  const pinchRef = useRef<{ dist: number; zoom: number } | null>(null);
+  const panRef = useRef<{ x: number; y: number; px: number; py: number } | null>(null);
+  const lastTapRef = useRef<number>(0);
   const { isMobile, isMobileLandscape } = useViewport();
 
   const [pdfDoc,      setPdfDoc]      = useState<any>(null);
@@ -68,6 +72,8 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
   const [hint, setHint] = useState(true); // first-time swipe hint on mobile
   const [thumbs, setThumbs] = useState<Record<number, string>>({});
   const [viewportTick, setViewportTick] = useState(0); // bumped on resize to re-render
+  const [zoom, setZoom] = useState(1);                 // pinch-zoom factor
+  const [pan, setPan]   = useState({ x: 0, y: 0 });    // pan offset when zoomed
 
   // Sync input with currentPage
   useEffect(() => { setInputVal(String(currentPage)); }, [currentPage]);
@@ -287,26 +293,76 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
     return () => window.removeEventListener('keydown', h);
   }, [goPage]);
 
-  // Touch swipe handlers — left/right swipe → next/prev page.
+  const MAX_ZOOM = 5;
+  const dist2 = (a: React.Touch, b: React.Touch) => Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+  const resetZoom = () => { setZoom(1); setPan({ x: 0, y: 0 }); };
+
+  // Combined touch handler:
+  //  • 2 fingers           → pinch-zoom (around centre).
+  //  • 1 finger + zoomed   → pan the page.
+  //  • 1 finger + zoom = 1 → record for swipe-to-page (handled on touchend).
   const onTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length === 2) {
+      pinchRef.current = { dist: dist2(e.touches[0], e.touches[1]), zoom };
+      touchStartRef.current = null;
+      panRef.current = null;
+      return;
+    }
     const t = e.touches[0];
-    touchStartRef.current = { x: t.clientX, y: t.clientY, t: Date.now() };
+    if (zoom > 1) {
+      panRef.current = { x: t.clientX, y: t.clientY, px: pan.x, py: pan.y };
+      touchStartRef.current = null;
+    } else {
+      touchStartRef.current = { x: t.clientX, y: t.clientY, t: Date.now() };
+      // double-tap → quick zoom toggle
+      const now = Date.now();
+      if (now - lastTapRef.current < 300) {
+        setZoom(z => z > 1 ? 1 : 2.5);
+        if (zoom > 1) setPan({ x: 0, y: 0 });
+        lastTapRef.current = 0;
+      } else {
+        lastTapRef.current = now;
+      }
+    }
   };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length === 2 && pinchRef.current) {
+      const d = dist2(e.touches[0], e.touches[1]);
+      const next = Math.max(1, Math.min(MAX_ZOOM, pinchRef.current.zoom * (d / pinchRef.current.dist)));
+      setZoom(next);
+      if (next <= 1.02) setPan({ x: 0, y: 0 });
+      return;
+    }
+    if (panRef.current && zoom > 1) {
+      const t = e.touches[0];
+      setPan({ x: panRef.current.px + (t.clientX - panRef.current.x), y: panRef.current.py + (t.clientY - panRef.current.y) });
+    }
+  };
+
   const onTouchEnd = (e: React.TouchEvent) => {
+    if (pinchRef.current && e.touches.length < 2) {
+      pinchRef.current = null;
+      if (zoom <= 1.02) resetZoom();
+      return;
+    }
+    if (panRef.current) { panRef.current = null; return; }
+
+    // Swipe-to-page only when not zoomed.
     const start = touchStartRef.current;
-    if (!start) return;
+    touchStartRef.current = null;
+    if (!start || zoom > 1) return;
     const t = e.changedTouches[0];
     const dx = t.clientX - start.x;
     const dy = t.clientY - start.y;
     const dt = Date.now() - start.t;
-    touchStartRef.current = null;
-    // Conservative swipe heuristic. Horizontal travel must clearly dominate
-    // (>2× the vertical) so that reading a tall page by scrolling vertically
-    // never accidentally flips to the next page. Min 60px, under 600ms.
     if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 2 && dt < 600) {
       goPage(dx > 0 ? -1 : 1);
     }
   };
+
+  // Reset zoom whenever the page changes.
+  useEffect(() => { resetZoom(); /* eslint-disable-next-line */ }, [currentPage]);
 
   // Auto-hide the hint after a few seconds.
   useEffect(() => {
@@ -425,6 +481,7 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
       <div
         ref={scrollRef}
         onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
         onTouchEnd={onTouchEnd}
         style={{
           flex: 1,
@@ -435,31 +492,64 @@ function PdfViewer({ url, title }: { url: string; title: string }) {
           padding: 8,
           background: '#1A1A1C',
           position: 'relative',
-          touchAction: 'pan-y',
+          // When zoomed we take over panning, so disable native scroll/gestures.
+          touchAction: zoom > 1 ? 'none' : 'pan-y',
         }}
       >
         {/* margin:auto centres the canvas both ways when it's smaller than the
             container, but collapses to 0 when it's taller — so a tall page
-            stays scrollable to the very top (alignItems:center would clip it). */}
+            stays scrollable to the very top (alignItems:center would clip it).
+            The pinch-zoom transform scales around the centre with a pan offset. */}
         <canvas ref={canvasRef} style={{
           boxShadow: '0 6px 28px rgba(0,0,0,0.55)',
           background: '#fff', borderRadius: 2,
           display: 'block',
           flexShrink: 0,
           margin: 'auto',
+          transform: zoom > 1 ? `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` : undefined,
+          transformOrigin: 'center center',
+          transition: pinchRef.current || panRef.current ? 'none' : 'transform 0.12s ease-out',
+          willChange: zoom > 1 ? 'transform' : undefined,
         }} />
 
-        {/* First-time swipe hint on mobile */}
-        {isMobile && hint && totalPages > 1 && (
+        {/* Zoom controls (also lets desktop users without a touchscreen zoom).
+            On touch the page can also be zoomed by pinching with two fingers. */}
+        <div style={{
+          position: 'absolute', left: 10, bottom: 10, zIndex: 6,
+          display: 'flex', alignItems: 'center', gap: 4,
+          background: 'rgba(0,0,0,0.6)', borderRadius: 999, padding: 4,
+          backdropFilter: 'blur(6px)' as any,
+        }}>
+          <button
+            onClick={() => setZoom(z => Math.max(1, +(z - 0.5).toFixed(2)))}
+            disabled={zoom <= 1}
+            title="Уменьшить"
+            style={{ width: 32, height: 32, borderRadius: '50%', border: 'none', background: zoom <= 1 ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)', color: zoom <= 1 ? 'rgba(255,255,255,0.3)' : '#fff', fontSize: 20, lineHeight: 1, cursor: zoom <= 1 ? 'not-allowed' : 'pointer' }}
+          >−</button>
+          <button
+            onClick={() => { if (zoom > 1) { setZoom(1); setPan({ x: 0, y: 0 }); } }}
+            title="Сбросить масштаб"
+            style={{ minWidth: 44, height: 32, borderRadius: 999, border: 'none', background: 'transparent', color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: zoom > 1 ? 'pointer' : 'default' }}
+          >{Math.round(zoom * 100)}%</button>
+          <button
+            onClick={() => setZoom(z => Math.min(MAX_ZOOM, +(z + 0.5).toFixed(2)))}
+            disabled={zoom >= MAX_ZOOM}
+            title="Увеличить"
+            style={{ width: 32, height: 32, borderRadius: '50%', border: 'none', background: zoom >= MAX_ZOOM ? 'rgba(255,255,255,0.1)' : 'rgba(255,255,255,0.2)', color: zoom >= MAX_ZOOM ? 'rgba(255,255,255,0.3)' : '#fff', fontSize: 18, lineHeight: 1, cursor: zoom >= MAX_ZOOM ? 'not-allowed' : 'pointer' }}
+          >+</button>
+        </div>
+
+        {/* First-time hint on mobile */}
+        {isMobile && hint && zoom === 1 && (
           <div style={{
-            position: 'absolute', left: '50%', bottom: 14, transform: 'translateX(-50%)',
+            position: 'absolute', left: '50%', bottom: 52, transform: 'translateX(-50%)',
             display: 'flex', alignItems: 'center', gap: 8,
             padding: '8px 14px', borderRadius: 999,
             background: 'rgba(0,0,0,0.78)', color: '#fff',
-            fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap',
-            pointerEvents: 'none',
+            fontSize: 11.5, fontWeight: 500, whiteSpace: 'nowrap',
+            pointerEvents: 'none', textAlign: 'center',
           }}>
-            <span>← Свайп для перелистывания →</span>
+            <span>{totalPages > 1 ? '← Свайп · ' : ''}Двумя пальцами — масштаб</span>
           </div>
         )}
 

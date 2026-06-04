@@ -1,13 +1,13 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { useUsers, type ManagedUser, type BatchUserInput } from '../../context/UsersContext';
-import { useCourses, UserProgress } from '../../context/CoursesContext';
+import { useCourses, UserProgress, sortCourses } from '../../context/CoursesContext';
 import { getCurrentOrganization } from '../../lib/organization';
 import { useOrganizationsContext } from '../../context/OrganizationsContext';
 import {
   IcUserPlus, IcPlus, IcClose, IcChevronDown, IcTeam,
   IcBook, IcDocument, IcCheck, IcDownload, IcTrash,
-  IcCheckCircle, IcBuilding, IcBriefcase,
+  IcCheckCircle, IcBuilding, IcBriefcase, IcWarning,
 } from '../../components/Icons';
 import {
   Document, Packer, Paragraph, Table, TableRow, TableCell,
@@ -430,7 +430,7 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
   const { addUsersBatch } = useUsers();
   const { courses } = useCourses();
   const { users } = useUsers();
-  const publishedCourses = courses.filter(c => c.published);
+  const publishedCourses = sortCourses(courses.filter(c => c.published));
   const tenantOrg = getCurrentOrganization();
 
   const organizations = [...new Set(users.filter(u => u.role === 'student').map(u => u.organization))].sort();
@@ -1447,7 +1447,7 @@ function summarizeRequests(users: ManagedUser[]): RequestSummary[] {
 function RequestArchiveModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { users, updateUser, deleteUser, addUsersBatch } = useUsers();
   const { courses } = useCourses();
-  const publishedCourses = courses.filter(c => c.published);
+  const publishedCourses = sortCourses(courses.filter(c => c.published));
   const tenantOrg = getCurrentOrganization();
 
   const requests = useMemo(() => summarizeRequests(users), [users]);
@@ -1455,6 +1455,13 @@ function RequestArchiveModal({ open, onClose }: { open: boolean; onClose: () => 
   // Selected request for editing
   const [editingReq, setEditingReq] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  // Request pending deletion (its member accounts get removed on confirm).
+  const [confirmDel, setConfirmDel] = useState<RequestSummary | null>(null);
+
+  const deleteRequest = (req: RequestSummary) => {
+    req.members.forEach(m => deleteUser(m.id));
+    setConfirmDel(null);
+  };
 
   const filtered = requests.filter(r => {
     const q = search.trim().toLowerCase();
@@ -1591,8 +1598,56 @@ function RequestArchiveModal({ open, onClose }: { open: boolean; onClose: () => 
                   >
                     Открыть
                   </button>
+                  <button
+                    onClick={() => setConfirmDel(req)}
+                    title="Удалить заявку"
+                    style={{
+                      padding: 8, borderRadius: 8, border: `1.5px solid #FECACA`,
+                      background: '#fff', cursor: 'pointer', flexShrink: 0,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}
+                  >
+                    <IcTrash size={14} color="#DC2626" />
+                  </button>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Delete-request confirmation */}
+          {confirmDel && (
+            <div onClick={() => setConfirmDel(null)} style={{
+              position: 'fixed', inset: 0, background: 'rgba(15,22,41,0.55)', zIndex: 1100,
+              display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16,
+            }}>
+              <div onClick={e => e.stopPropagation()} style={{
+                background: '#fff', borderRadius: 14, width: '100%', maxWidth: 440, padding: 22,
+                boxShadow: '0 20px 60px rgba(0,0,0,0.3)',
+              }}>
+                <div style={{
+                  width: 48, height: 48, borderRadius: '50%', background: '#FEE2E2',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: 12,
+                }}>
+                  <IcWarning size={22} color="#DC2626" />
+                </div>
+                <h3 style={{ margin: '0 0 6px', fontSize: 16, color: '#0F1629' }}>
+                  Удалить заявку №{confirmDel.requestNumber}?
+                </h3>
+                <p style={{ margin: '0 0 16px', fontSize: 13, color: '#374151', lineHeight: 1.55 }}>
+                  Будут удалены <strong>{confirmDel.members.length}</strong> {confirmDel.members.length === 1 ? 'учётная запись' : confirmDel.members.length < 5 ? 'учётные записи' : 'учётных записей'} этой заявки
+                  ({confirmDel.organization}). Действие необратимо. Перед удалением убедитесь, что данные больше не актуальны.
+                </p>
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                  <button onClick={() => setConfirmDel(null)} style={{
+                    padding: '9px 16px', borderRadius: 8, border: `1.5px solid ${BORDER}`,
+                    background: '#fff', color: '#374151', fontSize: 13, fontWeight: 500, cursor: 'pointer',
+                  }}>Отмена</button>
+                  <button onClick={() => deleteRequest(confirmDel)} style={{
+                    padding: '9px 18px', borderRadius: 8, border: 'none',
+                    background: '#DC2626', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer',
+                  }}>Удалить заявку</button>
+                </div>
+              </div>
             </div>
           )}
         </div>
