@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { useUsers, type ManagedUser, type BatchUserInput } from '../../context/UsersContext';
-import { useCourses, UserProgress, sortCourses } from '../../context/CoursesContext';
+import { useCourses, UserProgress, sortCourses, orderForAssignment } from '../../context/CoursesContext';
 import { getCurrentOrganization } from '../../lib/organization';
 import { useOrganizationsContext } from '../../context/OrganizationsContext';
 import {
@@ -428,12 +428,8 @@ const inputStyle: React.CSSProperties = {
 
 function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { addUsersBatch } = useUsers();
-  const { courses, updateCourse } = useCourses();
+  const { courses } = useCourses();
   const [batchCourseSearch, setBatchCourseSearch] = useState('');
-  const togglePin = async (e: React.MouseEvent, course: { id: string; pinned?: boolean }) => {
-    e.stopPropagation();
-    try { await updateCourse(course.id, { pinned: !course.pinned } as any); } catch {}
-  };
   const { users } = useUsers();
   const publishedCourses = sortCourses(courses.filter(c => c.published));
   const tenantOrg = getCurrentOrganization();
@@ -891,10 +887,10 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
                         />
                       )}
                       <div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 2 }}>
-                        Нажмите 📌, чтобы закрепить основной курс наверху.
+                        Отмеченные курсы выделяются синим и поднимаются наверх.
                       </div>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 280, overflowY: 'auto', paddingRight: 2 }}>
-                        {publishedCourses
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 300, overflowY: 'auto', paddingRight: 2 }}>
+                        {orderForAssignment(publishedCourses, globalCourses)
                           .filter(c => batchCourseSearch.trim() === '' || c.title.toLowerCase().includes(batchCourseSearch.toLowerCase()))
                           .map(course => {
                             const checked = globalCourses.includes(course.id);
@@ -903,10 +899,10 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
                                 key={course.id}
                                 onClick={() => toggleGlobalCourse(course.id)}
                                 style={{
-                                  display: 'flex', alignItems: 'center', gap: 8,
+                                  display: 'flex', alignItems: 'center', gap: 10,
                                   padding: '10px 12px', borderRadius: 8,
-                                  border: `1.5px solid ${checked ? BLUE : course.pinned ? '#FCD34D' : '#E3E7F0'}`,
-                                  background: checked ? '#EBF1FE' : course.pinned ? '#FFFCF2' : '#fff',
+                                  border: `1.5px solid ${checked ? BLUE : '#E3E7F0'}`,
+                                  background: checked ? '#EBF1FE' : '#fff',
                                   cursor: 'pointer', textAlign: 'left', transition: 'all 0.12s',
                                 }}
                               >
@@ -921,21 +917,9 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
                                 <span style={{ fontSize: 13, color: checked ? NAVY : '#374151', fontWeight: checked ? 500 : 400, flex: 1, minWidth: 0 }}>
                                   {course.title}
                                 </span>
-                                {course.pinned && (
-                                  <span style={{ fontSize: 9, fontWeight: 700, color: '#B45309', background: '#FEF3C7', padding: '1px 5px', borderRadius: 4, flexShrink: 0 }}>ОСН.</span>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={(e) => togglePin(e, course)}
-                                  title={course.pinned ? 'Открепить' : 'Закрепить как основной'}
-                                  style={{
-                                    flexShrink: 0, width: 28, height: 28, borderRadius: 6,
-                                    border: `1px solid ${course.pinned ? '#FCD34D' : '#E3E7F0'}`,
-                                    background: course.pinned ? '#FEF3C7' : '#fff', cursor: 'pointer', fontSize: 13, lineHeight: 1,
-                                  }}
-                                >
-                                  <span style={{ filter: course.pinned ? 'none' : 'grayscale(1)', opacity: course.pinned ? 1 : 0.5 }}>📌</span>
-                                </button>
+                                <span style={{ fontSize: 11, color: '#9CA3AF', flexShrink: 0 }}>
+                                  {course.lessons.length} мат.
+                                </span>
                               </div>
                             );
                           })}
@@ -965,7 +949,7 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
                             {emp.name || 'Сотрудник ' + (idx + 1)}
                           </div>
                           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                            {publishedCourses.map(course => {
+                            {orderForAssignment(publishedCourses, emp.courses).map(course => {
                               const checked = emp.courses.includes(course.id);
                               return (
                                 <button

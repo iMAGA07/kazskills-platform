@@ -96,6 +96,21 @@ export function sortCourses<T extends { title: string; pinned?: boolean; sortOrd
   });
 }
 
+/**
+ * Ordering for the course ASSIGNMENT pickers:
+ *   selected (assigned) courses rise to the top, newest pick first;
+ *   the rest stay below in the canonical order (pinned, then A→Z).
+ * `assignedIds` is the ordered list of currently-checked course ids.
+ */
+export function orderForAssignment<T extends { id: string; title: string; pinned?: boolean; sortOrder?: number }>(
+  list: T[], assignedIds: string[],
+): T[] {
+  const pos = new Map(assignedIds.map((id, i) => [id, i]));
+  const selected = list.filter(c => pos.has(c.id)).sort((a, b) => (pos.get(b.id)! - pos.get(a.id)!));
+  const rest = sortCourses(list.filter(c => !pos.has(c.id)));
+  return [...selected, ...rest];
+}
+
 // ─── Progress Types ───────────────────────────────────────────────────────────
 export interface TestAttempt {
   id: string;
