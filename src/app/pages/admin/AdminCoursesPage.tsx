@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { useLanguage } from '../../context/LanguageContext';
 import { useCourses, sortCourses } from '../../context/CoursesContext';
+import { toast } from '../../components/shared/Toast';
 import {
   IcPlus, IcSearch, IcEdit, IcTrash,
   IcBook, IcCheckCircle, IcRefresh,
@@ -25,10 +26,18 @@ export default function AdminCoursesPage() {
     search === '' || c.title.toLowerCase().includes(search.toLowerCase())
   );
 
+  const [pinningId, setPinningId] = useState<string | null>(null);
   const togglePin = async (course: typeof courses[number]) => {
+    setPinningId(course.id);
     try {
       await updateCourse(course.id, { pinned: !course.pinned } as any);
-    } catch (e) { console.error('Pin toggle error:', e); }
+      toast.success(course.pinned ? 'Курс убран из основных' : 'Курс закреплён как основной — теперь сверху');
+    } catch (e: any) {
+      console.error('Pin toggle error:', e);
+      toast.error('Не удалось изменить курс. Войдите заново в админку и повторите.');
+    } finally {
+      setPinningId(null);
+    }
   };
 
   const handleDelete = async (id: string) => {

@@ -428,7 +428,12 @@ const inputStyle: React.CSSProperties = {
 
 function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { addUsersBatch } = useUsers();
-  const { courses } = useCourses();
+  const { courses, updateCourse } = useCourses();
+  const [batchCourseSearch, setBatchCourseSearch] = useState('');
+  const togglePin = async (e: React.MouseEvent, course: { id: string; pinned?: boolean }) => {
+    e.stopPropagation();
+    try { await updateCourse(course.id, { pinned: !course.pinned } as any); } catch {}
+  };
   const { users } = useUsers();
   const publishedCourses = sortCourses(courses.filter(c => c.published));
   const tenantOrg = getCurrentOrganization();
@@ -875,37 +880,66 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
                   </div>
 
                   {courseMode === 'all' ? (
-                    /* Global course selection */
+                    /* Global course selection — pinned ("ОСН.") on top, searchable */
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                      {publishedCourses.map(course => {
-                        const checked = globalCourses.includes(course.id);
-                        return (
-                          <button
-                            key={course.id}
-                            type="button"
-                            onClick={() => toggleGlobalCourse(course.id)}
-                            style={{
-                              display: 'flex', alignItems: 'center', gap: 10,
-                              padding: '10px 12px', borderRadius: 8,
-                              border: `1.5px solid ${checked ? BLUE : '#E3E7F0'}`,
-                              background: checked ? '#EBF1FE' : '#fff',
-                              cursor: 'pointer', textAlign: 'left', transition: 'all 0.12s',
-                            }}
-                          >
-                            <div style={{
-                              width: 18, height: 18, borderRadius: 5, flexShrink: 0,
-                              border: `2px solid ${checked ? BLUE : '#D1D5DB'}`,
-                              background: checked ? BLUE : '#fff',
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            }}>
-                              {checked && <IcCheck size={11} color="#fff" />}
-                            </div>
-                            <span style={{ fontSize: 13, color: checked ? NAVY : '#374151', fontWeight: checked ? 500 : 400, flex: 1 }}>
-                              {course.title}
-                            </span>
-                          </button>
-                        );
-                      })}
+                      {publishedCourses.length > 6 && (
+                        <input
+                          value={batchCourseSearch}
+                          onChange={e => setBatchCourseSearch(e.target.value)}
+                          placeholder="Поиск курса…"
+                          style={{ ...inputStyle, marginBottom: 2 }}
+                        />
+                      )}
+                      <div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 2 }}>
+                        Нажмите 📌, чтобы закрепить основной курс наверху.
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 280, overflowY: 'auto', paddingRight: 2 }}>
+                        {publishedCourses
+                          .filter(c => batchCourseSearch.trim() === '' || c.title.toLowerCase().includes(batchCourseSearch.toLowerCase()))
+                          .map(course => {
+                            const checked = globalCourses.includes(course.id);
+                            return (
+                              <div
+                                key={course.id}
+                                onClick={() => toggleGlobalCourse(course.id)}
+                                style={{
+                                  display: 'flex', alignItems: 'center', gap: 8,
+                                  padding: '10px 12px', borderRadius: 8,
+                                  border: `1.5px solid ${checked ? BLUE : course.pinned ? '#FCD34D' : '#E3E7F0'}`,
+                                  background: checked ? '#EBF1FE' : course.pinned ? '#FFFCF2' : '#fff',
+                                  cursor: 'pointer', textAlign: 'left', transition: 'all 0.12s',
+                                }}
+                              >
+                                <div style={{
+                                  width: 18, height: 18, borderRadius: 5, flexShrink: 0,
+                                  border: `2px solid ${checked ? BLUE : '#D1D5DB'}`,
+                                  background: checked ? BLUE : '#fff',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                }}>
+                                  {checked && <IcCheck size={11} color="#fff" />}
+                                </div>
+                                <span style={{ fontSize: 13, color: checked ? NAVY : '#374151', fontWeight: checked ? 500 : 400, flex: 1, minWidth: 0 }}>
+                                  {course.title}
+                                </span>
+                                {course.pinned && (
+                                  <span style={{ fontSize: 9, fontWeight: 700, color: '#B45309', background: '#FEF3C7', padding: '1px 5px', borderRadius: 4, flexShrink: 0 }}>ОСН.</span>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={(e) => togglePin(e, course)}
+                                  title={course.pinned ? 'Открепить' : 'Закрепить как основной'}
+                                  style={{
+                                    flexShrink: 0, width: 28, height: 28, borderRadius: 6,
+                                    border: `1px solid ${course.pinned ? '#FCD34D' : '#E3E7F0'}`,
+                                    background: course.pinned ? '#FEF3C7' : '#fff', cursor: 'pointer', fontSize: 13, lineHeight: 1,
+                                  }}
+                                >
+                                  <span style={{ filter: course.pinned ? 'none' : 'grayscale(1)', opacity: course.pinned ? 1 : 0.5 }}>📌</span>
+                                </button>
+                              </div>
+                            );
+                          })}
+                      </div>
                       {globalCourses.length > 0 && (
                         <div style={{ fontSize: 12, color: BLUE, marginTop: 4 }}>
                           Выбрано курсов: {globalCourses.length} — будут назначены всем {employees.length} сотрудникам

@@ -193,9 +193,16 @@ function UserFormModal({ open, onClose, editUser, organizations }: {
   organizations: string[];
 }) {
   const { addUser, updateUser } = useUsers();
-  const { courses } = useCourses();
+  const { courses, updateCourse } = useCourses();
   const publishedCourses = sortCourses(courses.filter(c => c.published));
   const tenantOrg = getCurrentOrganization();
+
+  // Pin/unpin a course straight from the assignment list so "main" courses
+  // jump to the top without leaving this form.
+  const togglePin = async (e: React.MouseEvent, course: { id: string; pinned?: boolean }) => {
+    e.stopPropagation();
+    try { await updateCourse(course.id, { pinned: !course.pinned } as any); } catch {}
+  };
 
   const [form, setForm] = useState<FormData>(EMPTY_FORM);
   const [errors, setErrors] = useState<Partial<Record<keyof FormData, string>>>({});
@@ -547,21 +554,23 @@ function UserFormModal({ open, onClose, editUser, organizations }: {
                       style={{ ...inputStyle, marginBottom: 6 }}
                     />
                   )}
+                  <div style={{ fontSize: 11, color: '#9CA3AF', marginBottom: 4 }}>
+                    Нажмите 📌, чтобы закрепить основной курс наверху списка.
+                  </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 6, maxHeight: 260, overflowY: 'auto', paddingRight: 2 }}>
                     {publishedCourses
                       .filter(c => courseSearch.trim() === '' || c.title.toLowerCase().includes(courseSearch.toLowerCase()))
                       .map(course => {
                         const checked = form.assignedCourses.includes(course.id);
                         return (
-                          <button
+                          <div
                             key={course.id}
-                            type="button"
                             onClick={() => toggleCourse(course.id)}
                             style={{
-                              display: 'flex', alignItems: 'center', gap: 10,
+                              display: 'flex', alignItems: 'center', gap: 8,
                               padding: '9px 12px', borderRadius: 8,
-                              border: `1.5px solid ${checked ? '#2B5CE6' : '#E3E7F0'}`,
-                              background: checked ? '#EBF1FE' : '#fff',
+                              border: `1.5px solid ${checked ? '#2B5CE6' : course.pinned ? '#FCD34D' : '#E3E7F0'}`,
+                              background: checked ? '#EBF1FE' : course.pinned ? '#FFFCF2' : '#fff',
                               cursor: 'pointer', textAlign: 'left', transition: 'all 0.12s',
                             }}
                           >
@@ -574,18 +583,32 @@ function UserFormModal({ open, onClose, editUser, organizations }: {
                             }}>
                               {checked && <IcCheck size={11} color="#fff" />}
                             </div>
+                            <span style={{ fontSize: 13, color: checked ? '#1B3D84' : '#374151', fontWeight: checked ? 500 : 400, flex: 1, minWidth: 0 }}>
+                              {course.title}
+                            </span>
                             {course.pinned && (
                               <span style={{ fontSize: 9, fontWeight: 700, color: '#B45309', background: '#FEF3C7', padding: '1px 5px', borderRadius: 4, flexShrink: 0 }}>
                                 ОСН.
                               </span>
                             )}
-                            <span style={{ fontSize: 13, color: checked ? '#1B3D84' : '#374151', fontWeight: checked ? 500 : 400, flex: 1 }}>
-                              {course.title}
-                            </span>
                             <span style={{ fontSize: 11, color: '#9CA3AF', flexShrink: 0 }}>
                               {course.lessons.length} мат.
                             </span>
-                          </button>
+                            {/* Pin toggle — does NOT toggle the assignment */}
+                            <button
+                              type="button"
+                              onClick={(e) => togglePin(e, course)}
+                              title={course.pinned ? 'Открепить' : 'Закрепить как основной (наверх)'}
+                              style={{
+                                flexShrink: 0, width: 28, height: 28, borderRadius: 6,
+                                border: `1px solid ${course.pinned ? '#FCD34D' : '#E3E7F0'}`,
+                                background: course.pinned ? '#FEF3C7' : '#fff',
+                                cursor: 'pointer', fontSize: 13, lineHeight: 1,
+                              }}
+                            >
+                              <span style={{ filter: course.pinned ? 'none' : 'grayscale(1)', opacity: course.pinned ? 1 : 0.5 }}>📌</span>
+                            </button>
+                          </div>
                         );
                       })}
                   </div>
