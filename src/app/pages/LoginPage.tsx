@@ -6,12 +6,14 @@ import { LanguageSwitcher } from '../components/shared/LanguageSwitcher';
 import { Logo } from '../components/shared/Logo';
 import { IcEye, IcClose, IcShield, IcWarning, IcLock, IcMail } from '../components/Icons';
 import { getOrganizationName } from '../lib/organization';
+import { InstructionModal } from '../components/shared/InstructionModal';
 
 const NAVY = '#1B3D84';
 const BLUE = '#2B5CE6';
 
 interface LoginPageProps {
-  /** Which audience this login page is for. Wrong-role logins are rejected. */
+  /** Which audience this login page is for. Wrong-role logins are rejected.
+      'admin' mode (the /internal-access entrance) also accepts representatives. */
   mode: UserRole;
 }
 
@@ -22,6 +24,7 @@ export default function LoginPage({ mode }: LoginPageProps) {
   const [showPass, setShowPass] = useState(false);
   const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState('');
+  const [showInstr, setShowInstr] = useState(false);
 
   const { login, logout } = useAuth();
   const { t } = useLanguage();
@@ -34,14 +37,22 @@ export default function LoginPage({ mode }: LoginPageProps) {
     const result = await login(email, password);
     setLoading(false);
     if (result.ok) {
-      if (result.role !== mode) {
-        // Wrong portal — drop the session and show a generic error so we don't
-        // leak the existence of a separate admin URL on the student page.
+      const role = result.role;
+      // The staff entrance (mode==='admin' at /internal-access) accepts both
+      // admins and client representatives; the student page only students.
+      const allowed =
+        role === mode ||
+        (mode === 'admin' && role === 'representative');
+      if (!allowed) {
         logout();
         setError(t('auth.error'));
         return;
       }
-      navigate(mode === 'admin' ? '/admin/dashboard' : '/student/courses');
+      navigate(
+        role === 'admin' ? '/admin/dashboard'
+        : role === 'representative' ? '/rep'
+        : '/student/courses'
+      );
     } else if (result.reason === 'wrong_tenant') {
       setError(orgName
         ? `Эта учётная запись не относится к организации ${orgName}`
@@ -291,10 +302,30 @@ export default function LoginPage({ mode }: LoginPageProps) {
         )}
       </div>
 
+      {/* Instruction button (students only — staff don't need it) */}
+      {mode === 'student' && (
+        <button
+          type="button"
+          onClick={() => setShowInstr(true)}
+          style={{
+            marginTop: '18px',
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            padding: '10px 18px', borderRadius: 999,
+            background: '#fff', border: '1.5px solid #D6E0FF',
+            color: NAVY, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+            boxShadow: '0 2px 10px rgba(27,61,132,0.08)',
+          }}
+        >
+          📘 Краткая инструкция по платформе
+        </button>
+      )}
+
       {/* Footer */}
-      <p style={{ marginTop: '20px', fontSize: '11.5px', color: '#9CA3AF', textAlign: 'center' }}>
+      <p style={{ marginTop: '16px', fontSize: '11.5px', color: '#9CA3AF', textAlign: 'center' }}>
         © 2025 Kazskills · kazskills.kz
       </p>
+
+      <InstructionModal open={showInstr} onClose={() => setShowInstr(false)} />
     </div>
   );
 }

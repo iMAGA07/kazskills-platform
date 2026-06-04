@@ -19,7 +19,7 @@ interface FormData {
   name: string;
   email: string;
   password: string;
-  role: 'admin' | 'student';
+  role: 'admin' | 'student' | 'representative';
   organization: string;
   department: string;
   position: string;
@@ -35,6 +35,7 @@ const EMPTY_FORM: FormData = {
 };
 
 const ROLE_META: Record<string, { label: string; color: string; bg: string }> = {
+  representative: { label: 'Представитель', color: '#B45309', bg: '#FEF3C7' },
   admin:   { label: 'Администратор', color: '#2B5CE6', bg: '#EBF1FE' },
   student: { label: 'Студент',       color: '#374151', bg: '#F4F6FB' },
 };
@@ -409,7 +410,8 @@ function UserFormModal({ open, onClose, editUser, organizations }: {
                     value={form.role}
                     onChange={v => set('role', v)}
                     options={[
-                      { value: 'student', label: 'Студент' },
+                      { value: 'student', label: 'Слушатель' },
+                      { value: 'representative', label: 'Представитель заказчика' },
                       { value: 'admin', label: 'Администратор' },
                     ]}
                   />

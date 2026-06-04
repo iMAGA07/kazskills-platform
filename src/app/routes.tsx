@@ -15,6 +15,7 @@ import AdminCoursesPage from './pages/admin/AdminCoursesPage';
 import CreateCoursePage from './pages/admin/CreateCoursePage';
 import AdminUsersPage from './pages/admin/AdminUsersPage';
 import AdminAnalyticsPage from './pages/admin/AdminAnalyticsPage';
+import RepDashboard from './pages/rep/RepDashboard';
 
 export const router = createBrowserRouter([
   {
@@ -36,6 +37,11 @@ export const router = createBrowserRouter([
   {
     path: '/admin',
     element: <Navigate to="/login" replace />,
+  },
+  // Representative (client rep) cabinet — its own minimal chrome, no AppLayout.
+  {
+    path: '/rep',
+    element: <RepDashboard />,
   },
   {
     path: '/',

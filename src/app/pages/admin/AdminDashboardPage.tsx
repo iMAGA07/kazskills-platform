@@ -371,9 +371,18 @@ async function exportBatchCredentials(
       spacing: { after: 100 },
       children: [new TextRun({ text: '5. После успешной сдачи теста сертификат появится в разделе «Сертификаты».', size: 22 })],
     }),
+    // Support block (per client doc)
+    new Paragraph({
+      spacing: { before: 200, after: 100 },
+      children: [new TextRun({ text: 'Служба поддержки', bold: true, size: 24 })],
+    }),
+    new Paragraph({
+      spacing: { after: 100 },
+      children: [new TextRun({ text: 'Если возникнут вопросы или технические сложности — напишите нам в WhatsApp: +7 (777) 287-95-47 (или воспользуйтесь кнопкой чата на сайте).', size: 22 })],
+    }),
     new Paragraph({
       spacing: { after: 300 },
-      children: [new TextRun({ text: 'По любым вопросам обращайтесь к администратору вашей организации.', size: 20, italics: true, color: '6B7280' })],
+      children: [new TextRun({ text: 'В сообщении укажите: ФИО, название организации и должность, описание возникших сложностей.', size: 20, italics: true, color: '6B7280' })],
     }),
   ];
 

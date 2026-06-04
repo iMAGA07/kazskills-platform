@@ -7,6 +7,7 @@ import { UsersProvider } from './context/UsersContext';
 import { CoursesProvider } from './context/CoursesContext';
 import { OrganizationsProvider } from './context/OrganizationsContext';
 import { ToastHost } from './components/shared/Toast';
+import { WhatsAppFab } from './components/shared/InstructionModal';
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
             <CoursesProvider>
               <RouterProvider router={router} />
               <ToastHost />
+              <WhatsAppFab />
             </CoursesProvider>
           </LanguageProvider>
         </UsersProvider>

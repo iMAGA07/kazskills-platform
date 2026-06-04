@@ -483,16 +483,23 @@ function BackBar() {
   );
 }
 
+function homeForRole(role: string): string {
+  if (role === 'admin') return '/admin/dashboard';
+  if (role === 'representative') return '/rep';
+  return '/student/courses';
+}
+
 export function StudentGuard() {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
-  if (user.role !== 'student') return <Navigate to="/admin/dashboard" replace />;
+  if (user.role !== 'student') return <Navigate to={homeForRole(user.role)} replace />;
   return <Outlet />;
 }
 
 export function AdminGuard() {
   const { user } = useAuth();
   if (!user) return <Navigate to="/internal-access" replace />;
-  if (user.role !== 'admin') return <Navigate to="/student/dashboard" replace />;
+  // Representatives are NOT admins — they get the restricted cabinet only.
+  if (user.role !== 'admin') return <Navigate to={homeForRole(user.role)} replace />;
   return <Outlet />;
 }

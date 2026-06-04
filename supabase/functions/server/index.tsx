@@ -367,11 +367,13 @@ app.get("/make-server-3ed1835c/attempts/:userId/:courseId", async (c) => {
 // ─── AUTH HELPERS ─────────────────────────────────────────────────────────────
 const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 
+type Role = 'admin' | 'student' | 'representative';
+
 interface ServerUser {
   id: string;
   email: string;
   password: string;
-  role: 'admin' | 'student';
+  role: Role;
   organization?: string;
   [k: string]: any;
 }
@@ -379,7 +381,7 @@ interface ServerUser {
 interface Session {
   token: string;
   userId: string;
-  role: 'admin' | 'student';
+  role: Role;
   expiresAt: number;
 }
 
@@ -475,18 +477,32 @@ function respondUser<T extends { password?: string }>(c: any, user: T) {
   return sess?.role === "admin" ? user : stripPassword(user);
 }
 
-// GET /users — list all users.
-// Admin sees everyone WITH passwords (needed for the Word reports and the
-// "edit user" form). Student sees only their own record, password stripped.
+// GET /users — list users.
+//  • admin          → everyone, WITH passwords (Word reports / edit form need them).
+//  • representative → only their own organization's users, passwords stripped
+//                     (a client rep monitors their company's staff, no secrets).
+//  • student        → only their own record, password stripped.
 app.get("/make-server-3ed1835c/users", requireAuth, async (c) => {
   try {
     const sess = c.get("session") as Session;
     const users = await getAllUsers();
-    if (sess.role !== "admin") {
-      const self = users.find(u => u.id === sess.userId);
-      return c.json(self ? [stripPassword(self)] : []);
+
+    if (sess.role === "admin") {
+      return c.json(users); // admin keeps passwords
     }
-    return c.json(users); // admin keeps passwords
+
+    if (sess.role === "representative") {
+      const self = users.find(u => u.id === sess.userId);
+      const org = (self?.organization ?? "").trim().toLowerCase();
+      const mine = users.filter(u =>
+        (u.organization ?? "").trim().toLowerCase() === org
+      );
+      return c.json(mine.map(stripPassword));
+    }
+
+    // student
+    const self = users.find(u => u.id === sess.userId);
+    return c.json(self ? [stripPassword(self)] : []);
   } catch (err) {
     console.log("Error listing users:", err);
     return c.json({ error: `Failed to list users: ${err}` }, 500);

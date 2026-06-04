@@ -9,7 +9,7 @@ const SUPABASE_HEADERS = { 'Content-Type': 'application/json', Authorization: `B
 const USER_KEY = 'kazskills_user';
 const TOKEN_KEY = 'kazskills_token';
 
-export type UserRole = 'admin' | 'student';
+export type UserRole = 'admin' | 'student' | 'representative';
 
 export type LoginResult =
   | { ok: true; role: UserRole }
