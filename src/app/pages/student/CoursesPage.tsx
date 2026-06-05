@@ -118,13 +118,16 @@ export default function CoursesPage() {
               href={whatsappLink(SUPPORT_PREFILL)}
               target="_blank" rel="noopener noreferrer"
               style={{
-                display: 'inline-flex', alignItems: 'center', gap: 8,
-                padding: '10px 16px', borderRadius: 9, background: '#25D366',
-                color: '#fff', textDecoration: 'none', fontSize: 13, fontWeight: 600,
+                display: 'inline-flex', alignItems: 'center', gap: 10,
+                padding: '10px 18px', borderRadius: 10, background: '#25D366',
+                color: '#fff', textDecoration: 'none',
               }}
             >
-              <WhatsAppGlyph size={16} color="#fff" />
-              Написать в WhatsApp · {SUPPORT_WHATSAPP_DISPLAY}
+              <WhatsAppGlyph size={22} color="#fff" />
+              <span style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.25, textAlign: 'left' }}>
+                <span style={{ fontSize: 13.5, fontWeight: 600 }}>Написать в WhatsApp</span>
+                <span style={{ fontSize: 12.5, opacity: 0.95 }}>{SUPPORT_WHATSAPP_DISPLAY}</span>
+              </span>
             </a>
           </div>
         </div>

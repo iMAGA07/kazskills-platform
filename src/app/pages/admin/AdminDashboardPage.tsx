@@ -379,7 +379,7 @@ async function exportBatchCredentials(
     }),
     new Paragraph({
       spacing: { after: 100 },
-      children: [new TextRun({ text: 'Если возникнут вопросы или технические сложности — напишите нам в WhatsApp: +7 (777) 287-95-47 (или воспользуйтесь кнопкой чата на сайте).', size: 22 })],
+      children: [new TextRun({ text: 'Если возникнут вопросы или технические сложности — напишите нам в WhatsApp: +7 (771) 615-84-28 (или воспользуйтесь кнопкой чата на сайте).', size: 22 })],
     }),
     new Paragraph({
       spacing: { after: 300 },

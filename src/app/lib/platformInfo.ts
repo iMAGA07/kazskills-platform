@@ -2,11 +2,9 @@
 // consistent across the login page, the student dashboard memo, the floating
 // WhatsApp button and the Word credentials export.
 
-// NOTE: the owner gave +77772879547 directly for the button; the client's Word
-// doc mentioned +7 (778) 248-60-00. Using the owner's number — change this one
-// constant to switch everywhere.
-export const SUPPORT_WHATSAPP_NUMBER = '77772879547';
-export const SUPPORT_WHATSAPP_DISPLAY = '+7 (777) 287-95-47';
+// Support WhatsApp — change these two constants to switch everywhere.
+export const SUPPORT_WHATSAPP_NUMBER = '77716158428';
+export const SUPPORT_WHATSAPP_DISPLAY = '+7 (771) 615-84-28';
 
 export function whatsappLink(prefilled?: string): string {
   const base = `https://wa.me/${SUPPORT_WHATSAPP_NUMBER}`;

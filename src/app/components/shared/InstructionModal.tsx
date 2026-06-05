@@ -29,11 +29,8 @@ export function InstructionModal({ open, onClose }: { open: boolean; onClose: ()
             fontSize: 18,
           }}>📘</div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: '#0F1629' }}>
-              Краткая инструкция
-            </div>
-            <div style={{ fontSize: 12, color: '#6B7280', marginTop: 1 }}>
-              Как работать с платформой KAZSKILLS
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#0F1629', lineHeight: 1.25 }}>
+              Краткая инструкция по работе с платформой KAZSKILLS
             </div>
           </div>
           <button onClick={onClose} style={{
