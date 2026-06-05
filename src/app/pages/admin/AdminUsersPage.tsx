@@ -3,11 +3,13 @@ import { useUsers, type ManagedUser } from '../../context/UsersContext';
 import { useCourses, sortCourses } from '../../context/CoursesContext';
 import { getCurrentOrganization } from '../../lib/organization';
 import { CourseAssignPicker } from '../../components/shared/CourseAssignPicker';
+import { downloadProtocol, protocolTypeForCourse, protocolTypeLabel } from '../../lib/protocol';
 import {
   IcSearch, IcFilter, IcUserPlus, IcPerson, IcShield, IcTeam,
   IcBook, IcMedal, IcEdit, IcTrash, IcClose, IcBuilding,
   IcCheck, IcSortAsc, IcSortDesc, IcChevronDown, IcMail,
   IcPhone, IcBriefcase, IcLock, IcMore, IcCheckCircle, IcWarning,
+  IcDocument, IcDownload,
 } from '../../components/Icons';
 
 // ────────────────────────────────────────────────
@@ -587,11 +589,12 @@ function UserFormModal({ open, onClose, editUser, organizations }: {
 // ────────────────────────────────────────────────
 // Row action menu
 // ────────────────────────────────────────────────
-function RowMenu({ user, onEdit, onDelete, onToggleStatus }: {
+function RowMenu({ user, onEdit, onDelete, onToggleStatus, onProtocols }: {
   user: ManagedUser;
   onEdit: () => void;
   onDelete: () => void;
   onToggleStatus: () => void;
+  onProtocols: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -634,6 +637,7 @@ function RowMenu({ user, onEdit, onDelete, onToggleStatus }: {
         }}>
           {[
             { icon: <IcEdit size={14} color="#374151" />, label: 'Редактировать', action: () => { setOpen(false); onEdit(); }, danger: false },
+            { icon: <IcDocument size={14} color="#2B5CE6" />, label: 'Протоколы', action: () => { setOpen(false); onProtocols(); }, danger: false },
             {
               icon: user.status === 'active'
                 ? <IcWarning size={14} color="#D97706" />
@@ -711,6 +715,7 @@ export default function AdminUsersPage() {
   const [editUser, setEditUser] = useState<ManagedUser | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<ManagedUser | null>(null);
   const [previewUser, setPreviewUser] = useState<ManagedUser | null>(null);
+  const [protocolsUser, setProtocolsUser] = useState<ManagedUser | null>(null);
 
   // unique organizations
   const organizations = useMemo(() => {
@@ -1047,6 +1052,7 @@ export default function AdminUsersPage() {
                   onEdit={() => openEdit(u)}
                   onDelete={() => setDeleteTarget(u)}
                   onToggleStatus={() => toggleStatus(u.id)}
+                  onProtocols={() => setProtocolsUser(u)}
                 />
               </div>
             </div>
@@ -1079,12 +1085,103 @@ export default function AdminUsersPage() {
         )}
       </Modal>
 
-      {/* Photo preview modal — view the full-size shot a student uploaded
-          after passing an exam, and download it as a file for the printed
-          certificate or HR records. */}
+      {/* Photo preview modal */}
       {previewUser?.avatar && (
         <PhotoPreviewModal user={previewUser} onClose={() => setPreviewUser(null)} />
       )}
+
+      {/* Per-user protocols modal */}
+      {protocolsUser && (
+        <UserProtocolsModal user={protocolsUser} onClose={() => setProtocolsUser(null)} />
+      )}
+    </div>
+  );
+}
+
+// ─── Per-user protocols modal ─────────────────────────────────────────────────
+function UserProtocolsModal({ user, onClose }: { user: ManagedUser; onClose: () => void }) {
+  const { courses, getProgress } = useCourses();
+  const [loading, setLoading] = useState(true);
+  const [passed, setPassed] = useState<{ id: string; title: string; score: number; date: string }[]>([]);
+  const [busyId, setBusyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const enrolled = new Set(user.enrolledCourses ?? []);
+    const assigned = courses.filter(c => c.published && enrolled.has(c.id));
+    if (assigned.length === 0) { setLoading(false); return; }
+    Promise.all(assigned.map(c => getProgress(user.id, c.id).then(p => ({ c, p })).catch(() => null)))
+      .then(rows => {
+        const out: { id: string; title: string; score: number; date: string }[] = [];
+        (rows.filter(Boolean) as { c: any; p: any }[]).forEach(({ c, p }) => {
+          const attempts = p?.attempts ?? [];
+          const best = attempts.filter((a: any) => a.passed).sort((a: any, b: any) => b.score - a.score)[0];
+          if (best || p?.status === 'completed') {
+            out.push({ id: c.id, title: c.title, score: best ? Math.round(best.score) : 100, date: best?.completedAt ?? new Date().toISOString() });
+          }
+        });
+        setPassed(out);
+      })
+      .finally(() => setLoading(false));
+    // eslint-disable-next-line
+  }, [user.id]);
+
+  const dl = async (course: { id: string; title: string }) => {
+    setBusyId(course.id);
+    try {
+      await downloadProtocol({
+        user: { id: user.id, name: user.name, position: user.position, organization: user.organization, requestNumber: user.requestNumber },
+        course,
+      });
+    } catch (e) { console.error(e); } finally { setBusyId(null); }
+  };
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(15,22,41,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 14, width: '100%', maxWidth: 560, maxHeight: '88vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+        <div style={{ padding: '18px 20px', borderBottom: '1px solid #EEF1F8', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ width: 38, height: 38, borderRadius: 9, background: '#EBF1FE', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <IcDocument size={18} color="#2B5CE6" />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: '#0F1629', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>Протоколы — {user.name}</div>
+            <div style={{ fontSize: 12, color: '#6B7280' }}>Сданные курсы и их официальные протоколы</div>
+          </div>
+          <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #E3E7F0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <IcClose size={14} color="#6B7280" />
+          </button>
+        </div>
+        <div style={{ padding: 18, overflowY: 'auto' }}>
+          {loading ? (
+            <div style={{ padding: 30, textAlign: 'center', color: '#9CA3AF' }}>Загрузка…</div>
+          ) : passed.length === 0 ? (
+            <div style={{ padding: 30, textAlign: 'center', color: '#9CA3AF', fontSize: 13.5 }}>У пользователя ещё нет сданных курсов.</div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {passed.map(pc => (
+                <div key={pc.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 14px', borderRadius: 10, border: '1px solid #E8ECF6' }}>
+                  <div style={{ width: 38, height: 38, borderRadius: 9, background: '#ECFDF5', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <IcCheckCircle size={18} color="#059669" />
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13.5, fontWeight: 600, color: '#0F1629' }}>{pc.title}</div>
+                    <div style={{ fontSize: 11.5, color: '#6B7280', marginTop: 2 }}>
+                      {protocolTypeLabel(protocolTypeForCourse(pc.title))} · {pc.score}% · {new Date(pc.date).toLocaleDateString('ru-RU')}
+                    </div>
+                  </div>
+                  <button onClick={() => dl({ id: pc.id, title: pc.title })} disabled={busyId === pc.id} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0,
+                    padding: '8px 14px', borderRadius: 8, border: 'none',
+                    background: busyId === pc.id ? '#9CA3AF' : '#1B3D84', color: '#fff',
+                    fontSize: 12.5, fontWeight: 600, cursor: busyId === pc.id ? 'wait' : 'pointer',
+                  }}>
+                    <IcDownload size={13} color="#fff" /> {busyId === pc.id ? '…' : 'Протокол (PDF)'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

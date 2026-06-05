@@ -54,8 +54,8 @@ app.get("/make-server-3ed1835c/health", (c) => c.json({ status: "ok" }));
 
 // POST /upload-url — generate a signed upload URL so the client can PUT the file
 // directly to Supabase Storage and bypass the Edge Function's 6 MB body limit.
-// Admin only.
-app.post("/make-server-3ed1835c/upload-url", requireAuth, requireAdmin, async (c) => {
+// Any authenticated user (students upload their certificate photo here).
+app.post("/make-server-3ed1835c/upload-url", requireAuth, async (c) => {
   try {
     const body = await c.req.json().catch(() => ({}));
     const filename = typeof body.filename === "string" ? body.filename : "file";

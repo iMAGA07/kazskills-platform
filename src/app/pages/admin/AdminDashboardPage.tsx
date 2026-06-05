@@ -3,8 +3,9 @@ import { useNavigate } from 'react-router';
 import { useUsers, type ManagedUser, type BatchUserInput } from '../../context/UsersContext';
 import { useCourses, UserProgress, sortCourses } from '../../context/CoursesContext';
 import { CourseAssignPicker } from '../../components/shared/CourseAssignPicker';
-import { getCurrentOrganization } from '../../lib/organization';
+import { getCurrentOrganization, slugForLegacyOrgName } from '../../lib/organization';
 import { useOrganizationsContext } from '../../context/OrganizationsContext';
+import { htmlToPdf } from '../../lib/reportPdf';
 import {
   IcUserPlus, IcPlus, IcClose, IcChevronDown, IcTeam,
   IcBook, IcDocument, IcCheck, IcDownload, IcTrash,
@@ -311,6 +312,131 @@ async function generateStatistika(
   const doc = new Document({ sections: [{ children }] });
   const blob = await Packer.toBlob(doc);
   downloadBlob(blob, `Статистика_${org}${requestNum ? `_${requestNum}` : ''}_${fileDate()}.docx`);
+}
+
+// ─── PDF versions (open everywhere, clickable login link) ──────────────────────
+function escHtml(s: string) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+function reportSiteUrl(org: string) {
+  const slug = slugForLegacyOrgName(org);
+  return slug ? `https://${slug}.kazskills.kz` : 'https://kazskills.kz';
+}
+const RPT_HEAD = `font-family:Arial,Helvetica,sans-serif;color:#0F1629;`;
+const RPT_TH = `border:1px solid #1B3D84;background:#1B3D84;color:#fff;padding:7px 6px;font-size:12px;font-weight:bold;text-align:center;`;
+const RPT_TD = `border:1px solid #c9d2e3;padding:7px 6px;font-size:12.5px;vertical-align:top;`;
+
+async function generateLoginsPasswordsPdf(
+  org: string, users: ManagedUser[], courses: ReturnType<typeof useCourses>['courses'], requestNum?: string,
+) {
+  const students = users.filter(u => u.role === 'student' && u.organization === org && (!requestNum || u.requestNumber === requestNum));
+  const titleById = new Map(courses.filter(c => c.published).map(c => [c.id, c.title]));
+  const url = reportSiteUrl(org);
+
+  const rows = students.map((u, i) => {
+    const titles = (u.enrolledCourses ?? []).map(id => titleById.get(id)).filter(Boolean) as string[];
+    const coursesHtml = titles.length ? titles.map((t, k) => `${k + 1}. ${escHtml(t)}`).join('<br>') : '—';
+    return `<tr>
+      <td style="${RPT_TD}text-align:center;">${i + 1}</td>
+      <td style="${RPT_TD}">${escHtml(u.name)}</td>
+      <td style="${RPT_TD}">${escHtml(u.position || '—')}</td>
+      <td style="${RPT_TD}font-weight:bold;">${escHtml(u.email)}</td>
+      <td style="${RPT_TD}font-weight:bold;">${escHtml(u.password || '—')}</td>
+      <td style="${RPT_TD}">${coursesHtml}</td>
+    </tr>`;
+  }).join('');
+
+  const html = `<div style="width:760px;box-sizing:border-box;padding:34px 36px;background:#fff;${RPT_HEAD}">
+    <div style="font-size:22px;font-weight:bold;margin-bottom:10px;">Логины и пароли</div>
+    <div style="font-size:14px;font-weight:bold;">Организация: ${escHtml(org)}</div>
+    ${requestNum ? `<div style="font-size:14px;font-weight:bold;">Номер заявки: ${escHtml(requestNum)}</div>` : ''}
+    <div style="font-size:12.5px;color:#666;margin-bottom:8px;">Дата формирования: ${todayStr()}</div>
+    <div style="font-size:13px;margin-bottom:16px;">Ссылка для входа: <span id="login-url" style="color:#2B5CE6;text-decoration:underline;font-weight:bold;">${url}</span></div>
+    ${students.length === 0
+      ? `<div style="color:#CC0000;">Слушатели не найдены.</div>`
+      : `<table style="width:100%;border-collapse:collapse;">
+          <thead><tr>
+            <th style="${RPT_TH}width:34px;">№</th><th style="${RPT_TH}">Ф. И. О</th>
+            <th style="${RPT_TH}">Должность</th><th style="${RPT_TH}">Логин</th>
+            <th style="${RPT_TH}">Пароль</th><th style="${RPT_TH}">Назначенные курсы</th>
+          </tr></thead><tbody>${rows}</tbody></table>`}
+  </div>`;
+
+  await htmlToPdf(html, `Логины_пароли_${org}${requestNum ? `_${requestNum}` : ''}_${fileDate()}.pdf`, [{ selector: '#login-url', url }]);
+}
+
+async function generateStatistikaPdf(
+  org: string, users: ManagedUser[], courses: ReturnType<typeof useCourses>['courses'],
+  progressMap: Record<string, UserProgress | null>, requestNum?: string,
+) {
+  const students = users.filter(u => u.role === 'student' && u.organization === org && (!requestNum || u.requestNumber === requestNum));
+  const relevant = courses.filter(c => c.published).filter(c => students.some(u => isEnrolled(u, c.id)));
+
+  const headCols = relevant.map(c => `<th style="${RPT_TH}">${escHtml(c.title)}</th>`).join('');
+  const rows = students.map((u, i) => {
+    const cells = relevant.map(c => {
+      if (!isEnrolled(u, c.id)) return `<td style="${RPT_TD}text-align:center;">—</td>`;
+      const prog = progressMap[`${u.id}:${c.id}`];
+      if (!prog || prog.attempts.length === 0) return `<td style="${RPT_TD}text-align:center;">не сдавал</td>`;
+      const best = prog.attempts.filter(a => a.passed).sort((a, b) => b.score - a.score)[0]
+        ?? prog.attempts.sort((a, b) => b.completedAt.localeCompare(a.completedAt))[0];
+      return `<td style="${RPT_TD}text-align:center;font-weight:bold;">${best ? `${Math.round(best.score)}%` : '—'}</td>`;
+    }).join('');
+    return `<tr><td style="${RPT_TD}text-align:center;">${i + 1}</td><td style="${RPT_TD}">${escHtml(u.name)}</td>${cells}</tr>`;
+  }).join('');
+
+  const body = (students.length === 0)
+    ? `<div style="color:#CC0000;">Слушатели не найдены.</div>`
+    : (relevant.length === 0)
+      ? `<div style="color:#CC0000;">Ни одному слушателю не назначены курсы.</div>`
+      : `<table style="width:100%;border-collapse:collapse;">
+          <thead><tr><th style="${RPT_TH}width:34px;">№</th><th style="${RPT_TH}">Ф. И. О</th>${headCols}</tr></thead>
+          <tbody>${rows}</tbody></table>
+         <div style="font-size:11px;color:#6B7280;font-style:italic;margin-top:10px;">«—» — курс не назначен. «не сдавал» — назначен, но попыток не было. «N%» — лучший результат.</div>`;
+
+  const html = `<div style="width:760px;box-sizing:border-box;padding:34px 36px;background:#fff;${RPT_HEAD}">
+    <div style="font-size:22px;font-weight:bold;margin-bottom:10px;">Статистика</div>
+    <div style="font-size:14px;font-weight:bold;">Организация: ${escHtml(org)}</div>
+    ${requestNum ? `<div style="font-size:14px;font-weight:bold;">Номер заявки: ${escHtml(requestNum)}</div>` : ''}
+    <div style="font-size:12.5px;color:#666;margin-bottom:16px;">Дата формирования: ${todayStr()}</div>
+    ${body}
+  </div>`;
+
+  await htmlToPdf(html, `Статистика_${org}${requestNum ? `_${requestNum}` : ''}_${fileDate()}.pdf`);
+}
+
+async function generateZayavkaPdf(
+  org: string, users: ManagedUser[], courses: ReturnType<typeof useCourses>['courses'],
+  progressMap: Record<string, UserProgress | null>, requestNum?: string,
+) {
+  const students = users.filter(u => u.role === 'student' && u.organization === org && (!requestNum || u.requestNumber === requestNum));
+  const relevant = courses.filter(c => c.published).filter(c => students.some(u => isEnrolled(u, c.id)));
+
+  const blocks = relevant.map(course => {
+    const enrolled = students.filter(u => isEnrolled(u, course.id));
+    if (enrolled.length === 0) return '';
+    const rows = enrolled.map((u, i) => {
+      const prog = progressMap[`${u.id}:${course.id}`];
+      const passing = prog?.attempts?.filter(a => a.passed).sort((a, b) => b.completedAt.localeCompare(a.completedAt))[0];
+      const date = passing ? fmtDate(passing.completedAt) : '—';
+      return `<tr><td style="${RPT_TD}text-align:center;">${i + 1}</td><td style="${RPT_TD}">${escHtml(u.name)}</td><td style="${RPT_TD}">${escHtml(u.position || '—')}</td><td style="${RPT_TD}text-align:center;">${date}</td></tr>`;
+    }).join('');
+    return `<div style="font-size:14px;font-weight:bold;margin:18px 0 8px;">«${escHtml(course.title)}»</div>
+      <table style="width:100%;border-collapse:collapse;"><thead><tr>
+        <th style="${RPT_TH}width:34px;">№</th><th style="${RPT_TH}">Ф. И. О</th>
+        <th style="${RPT_TH}">Должность</th><th style="${RPT_TH}">Дата прохождения курса</th>
+      </tr></thead><tbody>${rows}</tbody></table>`;
+  }).join('');
+
+  const html = `<div style="width:760px;box-sizing:border-box;padding:34px 36px;background:#fff;${RPT_HEAD}">
+    <div style="font-size:22px;font-weight:bold;margin-bottom:10px;">Заявка</div>
+    <div style="font-size:14px;font-weight:bold;">Организация: ${escHtml(org)}</div>
+    ${requestNum ? `<div style="font-size:14px;font-weight:bold;">Номер заявки: ${escHtml(requestNum)}</div>` : ''}
+    <div style="font-size:12.5px;color:#666;margin-bottom:8px;">Дата формирования: ${todayStr()}</div>
+    ${students.length === 0 ? `<div style="color:#CC0000;">Слушатели не найдены.</div>` : (relevant.length === 0 ? `<div style="color:#CC0000;">Ни одному слушателю не назначены курсы.</div>` : blocks)}
+  </div>`;
+
+  await htmlToPdf(html, `Заявка_${org}${requestNum ? `_${requestNum}` : ''}_${fileDate()}.pdf`);
 }
 
 // ─── Word export for batch credentials ────────────────────────────────────────
@@ -1133,7 +1259,7 @@ function ReportModal({ open, onClose }: { open: boolean; onClose: () => void }) 
 
   const needsProgress = type === 'zayavka' || type === 'statistika';
 
-  const handleGenerate = async () => {
+  const handleGenerate = async (format: 'word' | 'pdf') => {
     if (!type || !org) return;
     setGenerating(true);
     try {
@@ -1150,9 +1276,15 @@ function ReportModal({ open, onClose }: { open: boolean; onClose: () => void }) 
         pairs.forEach(({ uid, cid }, i) => { progressMap[`${uid}:${cid}`] = results[i]; });
       }
 
-      if (type === 'zayavka')    await generateZayavka(org, users, courses, progressMap, requestNum || undefined);
-      if (type === 'logins')     await generateLoginsPasswords(org, users, courses, requestNum || undefined);
-      if (type === 'statistika') await generateStatistika(org, users, courses, progressMap, requestNum || undefined);
+      if (format === 'pdf') {
+        if (type === 'zayavka')    await generateZayavkaPdf(org, users, courses, progressMap, requestNum || undefined);
+        if (type === 'logins')     await generateLoginsPasswordsPdf(org, users, courses, requestNum || undefined);
+        if (type === 'statistika') await generateStatistikaPdf(org, users, courses, progressMap, requestNum || undefined);
+      } else {
+        if (type === 'zayavka')    await generateZayavka(org, users, courses, progressMap, requestNum || undefined);
+        if (type === 'logins')     await generateLoginsPasswords(org, users, courses, requestNum || undefined);
+        if (type === 'statistika') await generateStatistika(org, users, courses, progressMap, requestNum || undefined);
+      }
 
       setDone(true);
       setTimeout(() => onClose(), 1800);
@@ -1339,25 +1471,39 @@ function ReportModal({ open, onClose }: { open: boolean; onClose: () => void }) 
                 }}>
                 Далее →
               </button>
-            ) : (
-              <button
-                onClick={handleGenerate}
-                disabled={!org || generating}
-                style={{
-                  padding: '9px 24px', borderRadius: 9, border: 'none', display: 'flex', alignItems: 'center', gap: 7,
-                  background: org && !generating ? NAVY : '#E5E7EB',
-                  color: org && !generating ? '#fff' : '#9CA3AF',
-                  fontSize: 13.5, fontWeight: 600, cursor: org && !generating ? 'pointer' : 'not-allowed',
-                }}>
-                {generating ? (
-                  <>
-                    <div style={{ width: 14, height: 14, border: '2px solid rgba(255,255,255,0.3)', borderTopColor: '#fff', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
-                    Формирование…
-                  </>
-                ) : (
-                  <><IcDownload size={15} color="#fff" /> Скачать .docx</>
-                )}
+            ) : generating ? (
+              <button disabled style={{
+                padding: '9px 24px', borderRadius: 9, border: 'none', display: 'flex', alignItems: 'center', gap: 7,
+                background: '#E5E7EB', color: '#9CA3AF', fontSize: 13.5, fontWeight: 600, cursor: 'not-allowed',
+              }}>
+                <div style={{ width: 14, height: 14, border: '2px solid rgba(0,0,0,0.2)', borderTopColor: '#6B7280', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+                Формирование…
               </button>
+            ) : (
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => handleGenerate('word')}
+                  disabled={!org}
+                  style={{
+                    padding: '9px 16px', borderRadius: 9, border: `1.5px solid ${org ? NAVY : '#E5E7EB'}`,
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    background: '#fff', color: org ? NAVY : '#9CA3AF',
+                    fontSize: 13, fontWeight: 600, cursor: org ? 'pointer' : 'not-allowed',
+                  }}>
+                  <IcDownload size={14} color={org ? NAVY : '#9CA3AF'} /> Word
+                </button>
+                <button
+                  onClick={() => handleGenerate('pdf')}
+                  disabled={!org}
+                  style={{
+                    padding: '9px 18px', borderRadius: 9, border: 'none',
+                    display: 'flex', alignItems: 'center', gap: 6,
+                    background: org ? NAVY : '#E5E7EB', color: org ? '#fff' : '#9CA3AF',
+                    fontSize: 13, fontWeight: 600, cursor: org ? 'pointer' : 'not-allowed',
+                  }}>
+                  <IcDownload size={14} color={org ? '#fff' : '#9CA3AF'} /> PDF
+                </button>
+              </div>
             )}
           </div>
         )}
