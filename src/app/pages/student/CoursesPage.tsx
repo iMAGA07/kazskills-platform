@@ -4,8 +4,8 @@ import { useAuth } from '../../context/AuthContext';
 import { useCourses, UserProgress } from '../../context/CoursesContext';
 import { IcSearch, IcCheckCircle, IcBook, IcChevronRight } from '../../components/Icons';
 import { useViewport } from '../../lib/useViewport';
-import { InstructionModal } from '../../components/shared/InstructionModal';
-import { INSTRUCTION_STEPS } from '../../lib/platformInfo';
+import { InstructionModal, WhatsAppGlyph } from '../../components/shared/InstructionModal';
+import { whatsappLink, SUPPORT_PREFILL, SUPPORT_WHATSAPP_DISPLAY } from '../../lib/platformInfo';
 
 const NAVY   = '#1B3D84';
 const BLUE   = '#2B5CE6';
@@ -69,7 +69,7 @@ export default function CoursesPage() {
   return (
     <div style={{ maxWidth: 960, margin: '0 auto' }}>
 
-      {/* Welcome banner + brief instruction memo (per client doc) */}
+      {/* Welcome banner + support block */}
       {user && (
         <div style={{
           marginBottom: '20px', padding: '18px 22px',
@@ -86,7 +86,7 @@ export default function CoursesPage() {
                 {user.name}!
               </h2>
               <p style={{ margin: 0, fontSize: '13.5px', color: '#4B5563' }}>
-                Образовательная онлайн-платформа KAZSKILLS. Ниже представлен список назначенных вам курсов.
+                Ниже представлен список назначенных вам курсов.
               </p>
             </div>
             <button
@@ -103,23 +103,29 @@ export default function CoursesPage() {
             </button>
           </div>
 
-          {/* Compact memo: the 4 key steps */}
+          {/* Support block (moved here from the instruction modal) */}
           <div style={{
             marginTop: 14, paddingTop: 14, borderTop: '1px dashed #C7D6FF',
-            display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: '8px 18px',
           }}>
-            {INSTRUCTION_STEPS.map((s, i) => (
-              <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                <span style={{
-                  flexShrink: 0, width: 18, height: 18, borderRadius: '50%',
-                  background: NAVY, color: '#fff', fontSize: 11, fontWeight: 700,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 1,
-                }}>{i + 1}</span>
-                <span style={{ fontSize: 12.5, color: '#374151', lineHeight: 1.4 }}>
-                  <strong style={{ color: '#1F2937' }}>{s.title}.</strong>{s.body ? ` ${s.body}` : ''}
-                </span>
-              </div>
-            ))}
+            <div style={{ fontSize: 13.5, fontWeight: 700, color: '#065F46', marginBottom: 5 }}>
+              Служба поддержки
+            </div>
+            <div style={{ fontSize: 12.5, color: '#15803D', lineHeight: 1.5, marginBottom: 10 }}>
+              Если возникнут вопросы или технические сложности — напишите нам в WhatsApp.
+              В сообщении укажите ваше ФИО, организацию и должность, а также описание проблемы.
+            </div>
+            <a
+              href={whatsappLink(SUPPORT_PREFILL)}
+              target="_blank" rel="noopener noreferrer"
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 8,
+                padding: '10px 16px', borderRadius: 9, background: '#25D366',
+                color: '#fff', textDecoration: 'none', fontSize: 13, fontWeight: 600,
+              }}
+            >
+              <WhatsAppGlyph size={16} color="#fff" />
+              Написать в WhatsApp · {SUPPORT_WHATSAPP_DISPLAY}
+            </a>
           </div>
         </div>
       )}

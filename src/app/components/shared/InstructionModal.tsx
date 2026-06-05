@@ -1,5 +1,5 @@
 import React from 'react';
-import { INSTRUCTION_STEPS, SUPPORT_WHATSAPP_DISPLAY, whatsappLink, SUPPORT_PREFILL } from '../../lib/platformInfo';
+import { INSTRUCTION_STEPS, INSTRUCTION_FOOTNOTE, SUPPORT_WHATSAPP_DISPLAY, whatsappLink, SUPPORT_PREFILL } from '../../lib/platformInfo';
 import { IcClose } from '../Icons';
 
 const NAVY = '#1B3D84';
@@ -66,30 +66,13 @@ export function InstructionModal({ open, onClose }: { open: boolean; onClose: ()
             ))}
           </div>
 
-          {/* Support */}
+          {/* Footnote: originals handed to the manager */}
           <div style={{
-            marginTop: 18, padding: '14px 16px', borderRadius: 12,
-            background: '#F0FDF4', border: '1px solid #BBF7D0',
+            marginTop: 16, padding: '12px 14px', borderRadius: 10,
+            background: '#F4F8FF', border: '1px solid #D6E0FF',
+            fontSize: 12.5, color: '#1E40AF', lineHeight: 1.5,
           }}>
-            <div style={{ fontSize: 13.5, fontWeight: 700, color: '#065F46', marginBottom: 6 }}>
-              Служба поддержки
-            </div>
-            <div style={{ fontSize: 12.5, color: '#15803D', lineHeight: 1.55, marginBottom: 10 }}>
-              Если возникнут вопросы или технические сложности — напишите нам в WhatsApp.
-              В сообщении укажите ваше ФИО, организацию и должность, а также описание проблемы.
-            </div>
-            <a
-              href={whatsappLink(SUPPORT_PREFILL)}
-              target="_blank" rel="noopener noreferrer"
-              style={{
-                display: 'inline-flex', alignItems: 'center', gap: 8,
-                padding: '9px 16px', borderRadius: 9, background: '#25D366',
-                color: '#fff', textDecoration: 'none', fontSize: 13, fontWeight: 600,
-              }}
-            >
-              <WhatsAppGlyph size={16} color="#fff" />
-              Написать в WhatsApp · {SUPPORT_WHATSAPP_DISPLAY}
-            </a>
+            {INSTRUCTION_FOOTNOTE}
           </div>
         </div>
 
