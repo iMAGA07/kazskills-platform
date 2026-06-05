@@ -99,7 +99,7 @@ export default function CoursesPage() {
                 color: NAVY, fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
               }}
             >
-              📘 Краткая инструкция
+              📘 Краткая инструкция по работе с платформой KAZSKILLS
             </button>
           </div>
 
