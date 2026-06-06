@@ -82,6 +82,26 @@ export interface CourseInput {
 }
 
 /**
+ * Defensive normalisation of a course coming from the server. Legacy / partially
+ * written / hand-edited KV records can be missing `test` or `lessons`, which would
+ * otherwise crash any page that does `course.test.questions.length` or
+ * `course.lessons.length`. Guarantee a well-formed shape once, at the boundary.
+ */
+function normalizeCourse(c: any): Course {
+  const t = c?.test ?? {};
+  return {
+    ...c,
+    lessons: Array.isArray(c?.lessons) ? c.lessons : [],
+    test: {
+      questions: Array.isArray(t.questions) ? t.questions : [],
+      timeLimit: Number.isFinite(t.timeLimit) ? t.timeLimit : 60,
+      passingScore: Number.isFinite(t.passingScore) ? t.passingScore : 70,
+      maxAttempts: Number.isFinite(t.maxAttempts) ? t.maxAttempts : 0,
+    },
+  } as Course;
+}
+
+/**
  * Canonical course ordering used by every list and assignment picker:
  * pinned ("main") courses first (by their sortOrder), then the rest A→Z.
  */
@@ -187,7 +207,7 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
       const res  = await fetch(`${BASE}/courses`, { headers: HEADERS });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? 'Failed to fetch courses');
-      setAllCourses(Array.isArray(data) ? data : []);
+      setAllCourses(Array.isArray(data) ? data.map(normalizeCourse) : []);
     } catch (e: any) {
       console.error('CoursesContext fetchCourses:', e);
       setError(e.message);
@@ -209,8 +229,9 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? 'Failed to create course');
-    setAllCourses(prev => [...prev, data]);
-    return data;
+    const course = normalizeCourse(data);
+    setAllCourses(prev => [...prev, course]);
+    return course;
   }, []);
 
   const updateCourse = useCallback(async (id: string, input: Partial<CourseInput>): Promise<Course> => {
@@ -219,8 +240,9 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? 'Failed to update course');
-    setAllCourses(prev => prev.map(c => c.id === id ? data : c));
-    return data;
+    const course = normalizeCourse(data);
+    setAllCourses(prev => prev.map(c => c.id === id ? course : c));
+    return course;
   }, []);
 
   const deleteCourse = useCallback(async (id: string): Promise<void> => {

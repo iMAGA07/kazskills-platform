@@ -58,7 +58,24 @@
       "Bash(unzip -l /Users/imangaali/Downloads/__TRACKED_VAR__.docx)",
       "Bash(node --input-type=module -e ' *)",
       "Bash(git commit -q -m ' *)",
-      "Bash(awk 'NR>=556 && NR<=1470' src/app/pages/admin/AdminDashboardPage.tsx)"
+      "Bash(awk 'NR>=556 && NR<=1470' src/app/pages/admin/AdminDashboardPage.tsx)",
+      "Bash(awk 'NR>=2058 && NR<=2353 && /use\\(State|Effect|Memo|Ref|Callback|Context\\)/' src/app/pages/admin/AdminDashboardPage.tsx)",
+      "Bash(awk 'NR>=2401 && NR<=2900 && /use\\(State|Effect|Memo|Ref|Callback|Context\\)|return null/' src/app/pages/admin/AdminDashboardPage.tsx)",
+      "Bash(awk 'NR>=369 && NR<=730 { if \\(/^  return \\\\\\(|^  return </\\) print NR\": FIRST-RETURN: \"$0; if \\(/use\\(State|Effect|Memo|Ref|Callback\\)/\\) print NR\": HOOK: \"$0 }' src/app/pages/student/LearnPage.tsx)",
+      "Bash(awk 'NR>=731 && NR<=845 { if \\(/return \\\\\\(|return </\\) print NR\": RET: \"$0; if \\(/use\\(State|Effect|Memo|Ref|Callback\\)/\\) print NR\": HOOK: \"$0; if \\(/^  if \\\\\\(!/\\) print NR\": GUARD: \"$0 }' src/app/pages/student/LearnPage.tsx)",
+      "Bash(awk 'NR>=210 && NR<=591 { if \\(/^  return |^    return \\\\\\(|^  if \\\\\\(!open\\\\\\)/\\) print NR\": \"$0; if \\(/^  const .*use\\(State|Memo|Ref|Callback\\)|^  use\\(Effect|Memo|Callback|State|Ref\\)/\\) print NR\": HOOK: \"$0 }' src/app/pages/admin/AdminUsersPage.tsx)",
+      "Bash(awk 'NR>=599 && NR<=676 { if \\(/return null|return \\\\\\(|^  if \\\\\\(/\\) print NR\": \"$0; if \\(/use\\(State|Effect|Memo|Ref|Callback\\)/\\) print NR\": HOOK: \"$0 }' src/app/pages/admin/AdminUsersPage.tsx)",
+      "Bash(awk 'NR>=1102 { if \\(/return null|^  return \\\\\\(|^  if \\\\\\(!/\\) print NR\": \"$0; if \\(/use\\(State|Effect|Memo|Ref|Callback\\)/\\) print NR\": HOOK: \"$0 }' src/app/pages/admin/AdminUsersPage.tsx)",
+      "Bash(grep -iE \"Modal |Modal$|previewUser &&|protocolsUser &&|deleteTarget &&|UserProtocolsModal|PhotoPreviewModal|DeleteModal\")",
+      "Bash(awk 'NR>=91 && NR<=254 && /^  return |^  if \\\\\\(.*\\\\\\) return[ ;]/' src/app/pages/admin/CreateCoursePage.tsx)",
+      "Bash(awk '/use\\(State|Effect|Memo|Ref|Callback\\)\\\\\\(/ && /^    +/' src/app/pages/admin/CreateCoursePage.tsx)",
+      "Bash(awk 'NR>=120 && NR<=160 { if \\(/return|use\\(State|Effect|Memo|Ref|Callback\\)/\\) print NR\": \"$0 }' src/app/pages/student/TestPage.tsx)",
+      "Bash(awk 'NR>=16 && NR<=142 && /^  return |^  if \\\\\\(.*\\\\\\) return[ <;\\(]/' src/app/pages/student/TestPage.tsx)",
+      "Bash(awk 'NR>=88 && NR<=244 { if \\(/^  return |^  if \\\\\\(.*\\\\\\) return[ <;\\(]/\\) print NR\": \"$0; if \\(/use\\(State|Effect|Memo|Ref|Callback\\)/\\) print NR\": HOOK: \"$0 }' src/app/pages/rep/RepDashboard.tsx)",
+      "Bash(sed -n '333,345p' src/app/pages/student/CourseDetailPage.tsx)",
+      "Bash(sed -n '270,279p' src/app/pages/admin/CreateCoursePage.tsx)",
+      "Bash(sed -n '963,969p' src/app/pages/admin/AdminDashboardPage.tsx)",
+      "Bash(sed -n '45,52p' src/app/components/shared/InstructionModal.tsx)"
     ]
   }
 }

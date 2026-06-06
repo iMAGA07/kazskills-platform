@@ -144,6 +144,33 @@ export default function TestPage() {
     return <div style={{ color: '#6B7280', textAlign: 'center', padding: '60px' }}>Курс не найден</div>;
   }
 
+  // A course with no test questions must not start (indexing questions[currentQ]
+  // would throw and white-screen the exam). Show a friendly message instead.
+  if (questions.length === 0) {
+    return (
+      <div style={{
+        position: 'fixed', inset: 0, background: 'rgba(15,22,41,0.72)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        zIndex: 100, backdropFilter: 'blur(8px)', padding: 20,
+      }}>
+        <div style={{ width: 440, maxWidth: '100%', borderRadius: 20, background: '#fff', overflow: 'hidden', boxShadow: '0 24px 64px rgba(0,0,0,0.18)' }}>
+          <div style={{ height: 4, background: 'linear-gradient(90deg, #2B5CE6, #5B4EF0)' }} />
+          <div style={{ padding: 36, textAlign: 'center' }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>📝</div>
+            <h2 style={{ margin: '0 0 8px', fontSize: 18, color: '#0F1629' }}>В этом курсе пока нет вопросов</h2>
+            <p style={{ margin: '0 0 22px', fontSize: 14, color: '#6B7280', lineHeight: 1.55 }}>
+              Тест ещё не настроен. Обратитесь к администратору или вернитесь к материалам курса.
+            </p>
+            <button onClick={() => navigate(`/student/courses/${courseId}`)}
+              style={{ width: '100%', padding: 12, borderRadius: 10, border: 'none', background: '#2B5CE6', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600 }}>
+              Вернуться к курсу
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   /* ---- Camera / pre-test screen ---- */
   if (!testStarted) {
     return (

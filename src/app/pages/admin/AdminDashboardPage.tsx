@@ -690,6 +690,18 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
   // Draft state
   const [restoredDraft, setRestoredDraft] = useState<BatchDraft | null>(null);
   const [draftSavedNote, setDraftSavedNote] = useState(false);
+  // Tracks "already created" synchronously so a debounced autosave that fires AFTER
+  // handleCreate can't resurrect the (now cleared) draft of an already-created заявка.
+  const createdRef = useRef(false);
+
+  const buildDraft = (): BatchDraft => ({
+    step, requestNumber, org, customOrg, department,
+    employees, courseMode, globalCourses,
+    savedAt: new Date().toISOString(),
+  });
+  const writeDraft = () => {
+    try { localStorage.setItem(batchDraftKey(), JSON.stringify(buildDraft())); } catch { /* quota — ignore */ }
+  };
 
   const freshState = () => {
     setStep(1);
@@ -710,6 +722,7 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
   // On open: restore an existing draft if one has real content, else start fresh.
   useEffect(() => {
     if (!open) return;
+    createdRef.current = false;       // a freshly opened session is not "created" yet
     const draft = loadBatchDraft();
     if (draftHasContent(draft) && draft) {
       setStep(draft.step ?? 1);
@@ -738,29 +751,16 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
   useEffect(() => {
     if (!open || created) return;
     const h = setTimeout(() => {
-      try {
-        const draft: BatchDraft = {
-          step, requestNumber, org, customOrg, department,
-          employees, courseMode, globalCourses,
-          savedAt: new Date().toISOString(),
-        };
-        localStorage.setItem(batchDraftKey(), JSON.stringify(draft));
-      } catch { /* quota / serialization — ignore */ }
+      if (createdRef.current) return;   // создано после запуска таймера — не воскрешаем черновик
+      writeDraft();
     }, 600);
     return () => clearTimeout(h);
   }, [open, created, step, requestNumber, org, customOrg, department, employees, courseMode, globalCourses]);
 
   const saveDraftNow = () => {
-    try {
-      const draft: BatchDraft = {
-        step, requestNumber, org, customOrg, department,
-        employees, courseMode, globalCourses,
-        savedAt: new Date().toISOString(),
-      };
-      localStorage.setItem(batchDraftKey(), JSON.stringify(draft));
-      setDraftSavedNote(true);
-      setTimeout(() => setDraftSavedNote(false), 2200);
-    } catch { /* ignore */ }
+    writeDraft();
+    setDraftSavedNote(true);
+    setTimeout(() => setDraftSavedNote(false), 2200);
   };
 
   const startOver = () => {
@@ -892,6 +892,7 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
     }));
     const result = addUsersBatch(batch, org, department, requestNumber);
     setCreatedUsers(result);
+    createdRef.current = true;   // block any in-flight autosave from re-writing the draft
     setCreated(true);
     clearBatchDraft();          // success → discard the draft
   };
@@ -925,6 +926,13 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
   const hasContent = !!(requestNumber.trim() || department.trim() || globalCourses.length
     || employees.some(e => e.name.trim() || e.position.trim() || e.courses.length));
 
+  // Closing flushes the draft synchronously (the autosave is debounced 600ms, so a
+  // quick close right after typing would otherwise drop the last edits).
+  const closeModal = () => {
+    if (!created && hasContent) writeDraft();
+    onClose();
+  };
+
   return (
     <div
       style={{
@@ -955,7 +963,7 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
               </p>
             </div>
           </div>
-          <button onClick={onClose}
+          <button onClick={closeModal}
             style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #E3E7F0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <IcClose size={15} color="#6B7280" />
           </button>
@@ -1428,7 +1436,7 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
                   ← Назад
                 </button>
               )}
-              <button onClick={onClose}
+              <button onClick={closeModal}
                 title="Введённые данные сохранятся в черновике"
                 style={{
                   padding: '9px 20px', borderRadius: 9, border: '1.5px solid #E3E7F0',
@@ -1803,6 +1811,14 @@ function RequestArchiveModal({ open, onClose }: { open: boolean; onClose: () => 
   // Request pending deletion (its member accounts get removed on confirm).
   const [confirmDel, setConfirmDel] = useState<RequestSummary | null>(null);
 
+  // If the open заявка disappears (e.g. all its members deleted), close the editor.
+  // Done in an effect, not in render, to avoid "setState during render".
+  useEffect(() => {
+    if (editingReq && !requests.some(r => r.requestNumber === editingReq)) {
+      setEditingReq(null);
+    }
+  }, [editingReq, requests]);
+
   const deleteRequest = (req: RequestSummary) => {
     req.members.forEach(m => deleteUser(m.id));
     setConfirmDel(null);
@@ -1821,10 +1837,7 @@ function RequestArchiveModal({ open, onClose }: { open: boolean; onClose: () => 
   // ── Editing view ──
   if (editingReq) {
     const req = requests.find(r => r.requestNumber === editingReq);
-    if (!req) {
-      setEditingReq(null);
-      return null;
-    }
+    if (!req) return null;   // the cleanup effect above will reset editingReq
     return (
       <RequestEditView
         request={req}
@@ -2065,7 +2078,7 @@ function RequestEditView({
 
   const addNewRow = () => {
     setNewRows(prev => [...prev, {
-      id: `new-${Date.now()}`, name: '', position: '',
+      id: mkEmpId(), name: '', position: '',
       login: genLogin6(), password: genPassword4(), courses: [],
     }]);
   };

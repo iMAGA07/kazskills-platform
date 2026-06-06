@@ -19,6 +19,26 @@ function authHeaders(): Record<string, string> {
   return h;
 }
 
+// Post one batch chunk with retries — a transient network failure must not silently
+// drop those users (they'd exist only in localStorage and vanish on the next
+// server pull). Retries up to 3 times with backoff before surfacing an error.
+async function syncBatchChunk(users: ManagedUser[], attempt = 0): Promise<void> {
+  try {
+    const res = await fetch(`${BASE}/users/batch`, {
+      method: 'POST', headers: authHeaders(), body: JSON.stringify(users),
+    });
+    if (res.status === 401) { window.dispatchEvent(new Event('session-expired')); return; }
+    if (!res.ok) throw new Error(await res.text());
+  } catch (e) {
+    if (attempt < 2) {
+      setTimeout(() => { syncBatchChunk(users, attempt + 1); }, 800 * (attempt + 1));
+      return;
+    }
+    console.warn('Batch chunk failed after retries:', e);
+    toast.error('Не все пользователи сохранились на сервере (нет связи). Они сохранены локально — при восстановлении связи откройте заявку и нажмите «Сохранить».');
+  }
+}
+
 // Background sync to server; failures surface as a single throttled toast (UI stays responsive).
 async function bgFetch(path: string, init?: RequestInit) {
   try {
@@ -391,8 +411,7 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
     // payload limits or time out, which previously left the server copy missing.
     const CHUNK = 50;
     for (let i = 0; i < newUsers.length; i += CHUNK) {
-      const slice = newUsers.slice(i, i + CHUNK);
-      bgFetch('/users/batch', { method: 'POST', body: JSON.stringify(slice) });
+      syncBatchChunk(newUsers.slice(i, i + CHUNK));
     }
     return newUsers;
   }, []);

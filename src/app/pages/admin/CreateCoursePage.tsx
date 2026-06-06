@@ -754,7 +754,12 @@ export default function CreateCoursePage() {
               </label>
               <input
                 type="number" value={+(timeLimit / 60).toFixed(2)}
-                onChange={e => setTimeLimit(Math.max(1, Math.round(Number(e.target.value) * 60)))}
+                onChange={e => {
+                  const hours = Number(e.target.value);
+                  if (!Number.isFinite(hours) || e.target.value.trim() === '') return; // ignore empty / NaN
+                  // Clamp to the labelled range 0.25–8 h (stored in minutes).
+                  setTimeLimit(Math.min(480, Math.max(15, Math.round(hours * 60))));
+                }}
                 min={0.25} max={8} step={0.25} style={inp} onFocus={onFocus} onBlur={onBlur}
               />
               <p style={{ margin: '5px 0 0', fontSize: '12px', color: '#9CA3AF' }}>{fmtDuration(timeLimit)} на прохождение теста (можно дробно: 0.5 = 30 мин, 1.5 = 1 ч 30 мин)</p>
