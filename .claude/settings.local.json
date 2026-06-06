@@ -57,7 +57,8 @@
       "Read(//private/tmp/**)",
       "Bash(unzip -l /Users/imangaali/Downloads/__TRACKED_VAR__.docx)",
       "Bash(node --input-type=module -e ' *)",
-      "Bash(git commit -q -m ' *)"
+      "Bash(git commit -q -m ' *)",
+      "Bash(awk 'NR>=556 && NR<=1470' src/app/pages/admin/AdminDashboardPage.tsx)"
     ]
   }
 }

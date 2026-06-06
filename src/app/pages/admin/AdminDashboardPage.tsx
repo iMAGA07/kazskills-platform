@@ -769,30 +769,9 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
     setRestoredDraft(null);
   };
 
-  if (!open) return null;
-
-  // ── Step 1 validation ──
-  const validateStep1 = () => {
-    const e: Record<string, string> = {};
-    if (!requestNumber.trim()) e.requestNumber = 'Введите номер заявки';
-    if (!org.trim()) e.org = 'Выберите организацию';
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  };
-
-  // ── Step 2 validation ── (errors keyed by row id, not index, so a memoised row
-  // stays pure and we never re-scan the whole list on each keystroke)
-  const validateStep2 = () => {
-    const e: Record<string, string> = {};
-    employees.forEach(emp => {
-      if (!emp.name.trim()) e[`emp_${emp.id}`] = 'ФИО';
-    });
-    if (employees.length === 0) e.employees = 'Добавьте хотя бы одного сотрудника';
-    setErrors(e);
-    return Object.keys(e).length === 0;
-  };
-
   // ── Employee management ── (stable callbacks → memoised rows skip re-render)
+  // NOTE: these are hooks (useCallback) so they MUST run on every render —
+  // keep them ABOVE the `if (!open) return null` early return (React error #310).
   const addEmployee = useCallback(() => {
     setEmployees(prev => [...prev, {
       id: mkEmpId(),
@@ -815,6 +794,29 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
       });
     }
   }, []);
+
+  if (!open) return null;
+
+  // ── Step 1 validation ──
+  const validateStep1 = () => {
+    const e: Record<string, string> = {};
+    if (!requestNumber.trim()) e.requestNumber = 'Введите номер заявки';
+    if (!org.trim()) e.org = 'Выберите организацию';
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  // ── Step 2 validation ── (errors keyed by row id, not index, so a memoised row
+  // stays pure and we never re-scan the whole list on each keystroke)
+  const validateStep2 = () => {
+    const e: Record<string, string> = {};
+    employees.forEach(emp => {
+      if (!emp.name.trim()) e[`emp_${emp.id}`] = 'ФИО';
+    });
+    if (employees.length === 0) e.employees = 'Добавьте хотя бы одного сотрудника';
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
 
   // Bulk paste: one person per line; optional "ФИО | Должность" / "ФИО, Должность".
   const applyBulk = () => {
