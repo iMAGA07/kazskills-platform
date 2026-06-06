@@ -21,6 +21,16 @@ const FAINT  = '#F8FAFD';
 const RED    = '#DC2626';
 const GREEN  = '#059669';
 
+// Human-readable duration from minutes (the test time is stored in minutes, but
+// admins now set it in hours).
+function fmtDuration(min: number): string {
+  const h = Math.floor(min / 60);
+  const m = Math.round(min % 60);
+  if (h && m) return `${h} ч ${m} мин`;
+  if (h) return `${h} ч`;
+  return `${m} мин`;
+}
+
 type ContentType = 'video' | 'pdf' | 'pptx';
 
 interface MaterialDraft {
@@ -142,7 +152,7 @@ export default function CreateCoursePage() {
 
   // Step 4 – Settings
   const [passingScore, setPassingScore] = useState(70);
-  const [timeLimit,    setTimeLimit]    = useState(20);
+  const [timeLimit,    setTimeLimit]    = useState(60); // stored in minutes; entered in hours
   const [maxAttempts,  setMaxAttempts]  = useState(3);
   const [published,    setPublished]    = useState(false);
 
@@ -740,14 +750,14 @@ export default function CreateCoursePage() {
             </div>
             <div>
               <label style={{ display: 'block', marginBottom: 8, color: '#374151', fontSize: '13px', fontWeight: 500 }}>
-                {t('admin.time_limit')} (мин)
+                {t('admin.time_limit')} (часов)
               </label>
               <input
-                type="number" value={timeLimit}
-                onChange={e => setTimeLimit(Number(e.target.value))}
-                min={5} max={180} style={inp} onFocus={onFocus} onBlur={onBlur}
+                type="number" value={+(timeLimit / 60).toFixed(2)}
+                onChange={e => setTimeLimit(Math.max(1, Math.round(Number(e.target.value) * 60)))}
+                min={0.25} max={8} step={0.25} style={inp} onFocus={onFocus} onBlur={onBlur}
               />
-              <p style={{ margin: '5px 0 0', fontSize: '12px', color: '#9CA3AF' }}>{timeLimit} минут на прохождение теста</p>
+              <p style={{ margin: '5px 0 0', fontSize: '12px', color: '#9CA3AF' }}>{fmtDuration(timeLimit)} на прохождение теста (можно дробно: 0.5 = 30 мин, 1.5 = 1 ч 30 мин)</p>
             </div>
             <div>
               <label style={{ display: 'block', marginBottom: 8, color: '#374151', fontSize: '13px', fontWeight: 500 }}>
@@ -809,7 +819,7 @@ export default function CreateCoursePage() {
                 { label: 'Материалов',     value: materials.length },
                 { label: 'Вопросов',       value: questions.length },
                 { label: 'Проходной балл', value: `${passingScore}%` },
-                { label: 'Время теста',    value: `${timeLimit} мин` },
+                { label: 'Время теста',    value: fmtDuration(timeLimit) },
                 { label: 'Попыток',        value: maxAttempts === 0 ? '∞ (без ограничений)' : maxAttempts },
                 { label: 'Статус',         value: published ? '✅ Опубликован' : '📝 Черновик' },
               ].map(({ label, value }) => (

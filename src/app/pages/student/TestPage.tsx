@@ -120,9 +120,19 @@ export default function TestPage() {
   useEffect(() => { return () => { if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop()); }; }, []);
 
   const formatTime = (secs: number) => {
-    const m = Math.floor(secs / 60).toString().padStart(2, '0');
-    const s = (secs % 60).toString().padStart(2, '0');
-    return `${m}:${s}`;
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    // Tests can now be hours long — show h:mm:ss past the hour, mm:ss otherwise.
+    return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+  };
+  // Human-readable test duration (minutes → hours) for the prep screen.
+  const fmtTestDuration = (min: number) => {
+    const h = Math.floor(min / 60), m = Math.round(min % 60);
+    if (h && m) return `${h} ч ${m} мин`;
+    if (h) return `${h} ч`;
+    return `${m} мин`;
   };
 
   const answeredCount = Object.keys(answers).length;
@@ -169,7 +179,7 @@ export default function TestPage() {
                 </p>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
                   {[
-                    { icon: Timer, text: `Время на тест: ${course.test.timeLimit} минут`, color: '#D97706', bg: '#FFFBEB' },
+                    { icon: Timer, text: `Время на тест: ${fmtTestDuration(course.test.timeLimit)}`, color: '#D97706', bg: '#FFFBEB' },
                     { icon: AlertCircle, text: `Вопросов: ${questions.length}`, color: '#2B5CE6', bg: '#EBF1FE' },
                     { icon: CheckCircle2, text: `Проходной балл: ${course.test.passingScore}%`, color: '#059669', bg: '#ECFDF5' },
                   ].map(({ icon: Icon, text, color, bg }) => (

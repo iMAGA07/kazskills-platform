@@ -387,7 +387,13 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
       requestNumber,
     }));
     persistFn(prev => [...prev, ...newUsers]);
-    bgFetch('/users/batch', { method: 'POST', body: JSON.stringify(newUsers) });
+    // Sync to the server in chunks — a single huge POST (e.g. 400 users) can exceed
+    // payload limits or time out, which previously left the server copy missing.
+    const CHUNK = 50;
+    for (let i = 0; i < newUsers.length; i += CHUNK) {
+      const slice = newUsers.slice(i, i + CHUNK);
+      bgFetch('/users/batch', { method: 'POST', body: JSON.stringify(slice) });
+    }
     return newUsers;
   }, []);
 

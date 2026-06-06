@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef, useCallback, memo } from 'react';
 import { useNavigate } from 'react-router';
 import { useUsers, type ManagedUser, type BatchUserInput } from '../../context/UsersContext';
 import { useCourses, UserProgress, sortCourses } from '../../context/CoursesContext';
@@ -553,6 +553,103 @@ const inputStyle: React.CSSProperties = {
   boxSizing: 'border-box' as const, transition: 'border-color 0.15s',
 };
 
+// Monotonic id generator — guarantees unique row ids even when many rows are added
+// in the same millisecond (the old `Date.now()` scheme produced duplicate React keys,
+// which corrupted input state at scale).
+let _empSeq = 0;
+function mkEmpId(): string { return 'e' + (++_empSeq); }
+
+// ─── Draft persistence (so a crash / accidental close never loses 400 rows) ─────
+interface BatchDraft {
+  step: number;
+  requestNumber: string;
+  org: string;
+  customOrg: boolean;
+  department: string;
+  employees: EmployeeRow[];
+  courseMode: 'all' | 'individual';
+  globalCourses: string[];
+  savedAt: string;
+}
+function batchDraftKey(): string {
+  const org = getCurrentOrganization();
+  return `kazskills_batch_draft_${org?.slug ?? 'root'}`;
+}
+function loadBatchDraft(): BatchDraft | null {
+  try {
+    const raw = localStorage.getItem(batchDraftKey());
+    return raw ? (JSON.parse(raw) as BatchDraft) : null;
+  } catch { return null; }
+}
+function draftHasContent(d: BatchDraft | null): boolean {
+  if (!d) return false;
+  return !!(d.requestNumber?.trim() || d.department?.trim()
+    || (d.globalCourses?.length)
+    || (d.employees ?? []).some(e => e.name?.trim() || e.position?.trim() || e.courses?.length));
+}
+function clearBatchDraft() {
+  try { localStorage.removeItem(batchDraftKey()); } catch { /* ignore */ }
+}
+
+// ─── Memoised employee row — only the edited row re-renders, not all 400 ────────
+const EmployeeRowItem = memo(function EmployeeRowItem({
+  emp, index, hasError, canRemove, onUpdate, onRemove,
+}: {
+  emp: EmployeeRow;
+  index: number;
+  hasError: boolean;
+  canRemove: boolean;
+  onUpdate: (id: string, field: keyof EmployeeRow, value: string) => void;
+  onRemove: (id: string) => void;
+}) {
+  return (
+    <div style={{
+      display: 'grid', gridTemplateColumns: '28px 1fr 1fr 34px', gap: 8, alignItems: 'start',
+      padding: '10px 12px', borderRadius: 10,
+      border: `1px solid ${hasError ? '#FECACA' : '#E3E7F0'}`,
+      background: hasError ? '#FFF7F7' : '#FAFBFF',
+    }}>
+      <div style={{
+        width: 24, height: 24, borderRadius: '50%', background: NAVY,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 11, fontWeight: 700, color: '#fff', marginTop: 3,
+      }}>
+        {index + 1}
+      </div>
+      <div>
+        <input
+          value={emp.name}
+          onChange={e => onUpdate(emp.id, 'name', e.target.value)}
+          placeholder="ФИО *"
+          style={{ ...inputStyle, fontSize: 13, borderColor: hasError ? '#DC2626' : '#E3E7F0' }}
+        />
+        {hasError && <span style={{ fontSize: 10.5, color: '#DC2626' }}>Введите ФИО</span>}
+      </div>
+      <div>
+        <input
+          value={emp.position}
+          onChange={e => onUpdate(emp.id, 'position', e.target.value)}
+          placeholder="Должность"
+          style={{ ...inputStyle, fontSize: 13 }}
+        />
+      </div>
+      <button
+        onClick={() => onRemove(emp.id)}
+        disabled={!canRemove}
+        style={{
+          width: 30, height: 30, borderRadius: 7,
+          border: '1px solid #E3E7F0', background: '#fff',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          cursor: canRemove ? 'pointer' : 'not-allowed',
+          opacity: canRemove ? 1 : 0.3, marginTop: 2,
+        }}
+      >
+        <IcTrash size={13} color="#DC2626" />
+      </button>
+    </div>
+  );
+});
+
 function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const { addUsersBatch } = useUsers();
   const { courses } = useCourses();
@@ -573,8 +670,11 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
 
   // Step 2
   const [employees, setEmployees] = useState<EmployeeRow[]>([
-    { id: '1', name: '', position: '', login: genLogin6(), password: genPassword4(), courses: [] },
+    { id: mkEmpId(), name: '', position: '', login: genLogin6(), password: genPassword4(), courses: [] },
   ]);
+  // Bulk paste (the realistic way to enter hundreds of people without typing 400 rows)
+  const [bulkText, setBulkText] = useState('');
+  const [showBulk, setShowBulk] = useState(false);
 
   // Step 3
   const [courseMode, setCourseMode] = useState<'all' | 'individual'>('all');
@@ -587,21 +687,87 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
   // Errors
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Draft state
+  const [restoredDraft, setRestoredDraft] = useState<BatchDraft | null>(null);
+  const [draftSavedNote, setDraftSavedNote] = useState(false);
+
+  const freshState = () => {
+    setStep(1);
+    setRequestNumber('');
+    setOrg(tenantOrg?.fullName ?? '');
+    setCustomOrg(false);
+    setDepartment('');
+    setEmployees([{ id: mkEmpId(), name: '', position: '', login: genLogin6(), password: genPassword4(), courses: [] }]);
+    setCourseMode('all');
+    setGlobalCourses([]);
+    setCreated(false);
+    setCreatedUsers([]);
+    setErrors({});
+    setBulkText('');
+    setShowBulk(false);
+  };
+
+  // On open: restore an existing draft if one has real content, else start fresh.
   useEffect(() => {
-    if (open) {
-      setStep(1);
-      setRequestNumber('');
-      setOrg(tenantOrg?.fullName ?? '');
-      setCustomOrg(false);
-      setDepartment('');
-      setEmployees([{ id: '1', name: '', position: '', login: genLogin6(), password: genPassword4(), courses: [] }]);
-      setCourseMode('all');
-      setGlobalCourses([]);
+    if (!open) return;
+    const draft = loadBatchDraft();
+    if (draftHasContent(draft) && draft) {
+      setStep(draft.step ?? 1);
+      setRequestNumber(draft.requestNumber ?? '');
+      setOrg(draft.org ?? (tenantOrg?.fullName ?? ''));
+      setCustomOrg(!!draft.customOrg);
+      setDepartment(draft.department ?? '');
+      // Re-id every restored row so ids are guaranteed unique this session.
+      setEmployees((draft.employees ?? []).map(r => ({ ...r, id: mkEmpId() })));
+      setCourseMode(draft.courseMode ?? 'all');
+      setGlobalCourses(draft.globalCourses ?? []);
       setCreated(false);
       setCreatedUsers([]);
       setErrors({});
+      setBulkText('');
+      setShowBulk(false);
+      setRestoredDraft(draft);
+    } else {
+      freshState();
+      setRestoredDraft(null);
     }
   }, [open]);
+
+  // Autosave (debounced) — persists the wizard so closing / a crash / a refresh
+  // never loses the entered data. Cleared only on successful create or "Начать заново".
+  useEffect(() => {
+    if (!open || created) return;
+    const h = setTimeout(() => {
+      try {
+        const draft: BatchDraft = {
+          step, requestNumber, org, customOrg, department,
+          employees, courseMode, globalCourses,
+          savedAt: new Date().toISOString(),
+        };
+        localStorage.setItem(batchDraftKey(), JSON.stringify(draft));
+      } catch { /* quota / serialization — ignore */ }
+    }, 600);
+    return () => clearTimeout(h);
+  }, [open, created, step, requestNumber, org, customOrg, department, employees, courseMode, globalCourses]);
+
+  const saveDraftNow = () => {
+    try {
+      const draft: BatchDraft = {
+        step, requestNumber, org, customOrg, department,
+        employees, courseMode, globalCourses,
+        savedAt: new Date().toISOString(),
+      };
+      localStorage.setItem(batchDraftKey(), JSON.stringify(draft));
+      setDraftSavedNote(true);
+      setTimeout(() => setDraftSavedNote(false), 2200);
+    } catch { /* ignore */ }
+  };
+
+  const startOver = () => {
+    clearBatchDraft();
+    freshState();
+    setRestoredDraft(null);
+  };
 
   if (!open) return null;
 
@@ -614,37 +780,67 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
     return Object.keys(e).length === 0;
   };
 
-  // ── Step 2 validation ──
+  // ── Step 2 validation ── (errors keyed by row id, not index, so a memoised row
+  // stays pure and we never re-scan the whole list on each keystroke)
   const validateStep2 = () => {
     const e: Record<string, string> = {};
-    employees.forEach((emp, i) => {
-      if (!emp.name.trim()) e[`emp_name_${i}`] = 'ФИО';
+    employees.forEach(emp => {
+      if (!emp.name.trim()) e[`emp_${emp.id}`] = 'ФИО';
     });
     if (employees.length === 0) e.employees = 'Добавьте хотя бы одного сотрудника';
     setErrors(e);
     return Object.keys(e).length === 0;
   };
 
-  // ── Employee management ──
-  const addEmployee = () => {
+  // ── Employee management ── (stable callbacks → memoised rows skip re-render)
+  const addEmployee = useCallback(() => {
     setEmployees(prev => [...prev, {
-      id: String(Date.now()),
+      id: mkEmpId(),
       name: '', position: '',
       login: genLogin6(), password: genPassword4(),
       courses: [],
     }]);
-  };
+  }, []);
 
-  const removeEmployee = (id: string) => {
-    if (employees.length <= 1) return;
-    setEmployees(prev => prev.filter(e => e.id !== id));
-  };
+  const removeEmployee = useCallback((id: string) => {
+    setEmployees(prev => prev.length <= 1 ? prev : prev.filter(e => e.id !== id));
+  }, []);
 
-  const updateEmployee = (id: string, field: keyof EmployeeRow, value: string) => {
+  const updateEmployee = useCallback((id: string, field: keyof EmployeeRow, value: string) => {
     setEmployees(prev => prev.map(e => e.id === id ? { ...e, [field]: value } : e));
-    // Clear error
-    const idx = employees.findIndex(e => e.id === id);
-    if (idx >= 0) setErrors(prev => { const n = { ...prev }; delete n[`emp_name_${idx}`]; return n; });
+    if (field === 'name') {
+      setErrors(prev => {
+        if (!prev[`emp_${id}`]) return prev;
+        const n = { ...prev }; delete n[`emp_${id}`]; return n;
+      });
+    }
+  }, []);
+
+  // Bulk paste: one person per line; optional "ФИО | Должность" / "ФИО, Должность".
+  const applyBulk = () => {
+    const lines = bulkText.split('\n').map(l => l.trim()).filter(Boolean);
+    if (lines.length === 0) return;
+    const rows: EmployeeRow[] = lines.map(line => {
+      // Split on the FIRST separator only (so a position like "Инженер, 1 кат." survives).
+      let name = line, position = '';
+      const sep = line.search(/[|;\t]/);
+      const cut = sep >= 0 ? sep : line.indexOf(',');
+      if (cut >= 0) { name = line.slice(0, cut); position = line.slice(cut + 1); }
+      return {
+        id: mkEmpId(),
+        name: name.trim(),
+        position: position.trim(),
+        login: genLogin6(), password: genPassword4(),
+        courses: [],
+      };
+    });
+    // Replace the lone empty seed row, otherwise append.
+    setEmployees(prev => {
+      const base = prev.length === 1 && !prev[0].name.trim() && !prev[0].position.trim() ? [] : prev;
+      return [...base, ...rows];
+    });
+    setBulkText('');
+    setShowBulk(false);
   };
 
   const toggleEmployeeCourse = (empId: string, courseId: string) => {
@@ -695,6 +891,7 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
     const result = addUsersBatch(batch, org, department, requestNumber);
     setCreatedUsers(result);
     setCreated(true);
+    clearBatchDraft();          // success → discard the draft
   };
 
   // ── Export credentials ──
@@ -721,6 +918,11 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
 
   const STEP_LABELS = ['Заявка', 'Сотрудники', 'Курсы', 'Проверка'];
 
+  // Has the user entered anything worth protecting? If so, a stray backdrop tap
+  // must NOT close the wizard (this was a prime cause of "окно свернулось, всё пропало").
+  const hasContent = !!(requestNumber.trim() || department.trim() || globalCourses.length
+    || employees.some(e => e.name.trim() || e.position.trim() || e.courses.length));
+
   return (
     <div
       style={{
@@ -728,7 +930,7 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
         background: 'rgba(15,22,41,0.45)', backdropFilter: 'blur(3px)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
       }}
-      onClick={e => { if (e.target === e.currentTarget && !created) onClose(); }}
+      onClick={e => { if (e.target === e.currentTarget && !created && !hasContent) onClose(); }}
     >
       <div style={{
         background: '#fff', borderRadius: 18, width: '100%', maxWidth: 680,
@@ -778,6 +980,27 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
 
         {/* Body */}
         <div style={{ padding: '20px 24px', overflowY: 'auto', flex: 1 }}>
+
+          {/* Restored-draft banner */}
+          {restoredDraft && !created && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
+              marginBottom: 16, padding: '10px 14px', borderRadius: 10,
+              background: '#FFFBEB', border: '1px solid #FDE68A',
+            }}>
+              <IcCheckCircle size={16} color="#D97706" />
+              <div style={{ flex: 1, minWidth: 160, fontSize: 12.5, color: '#92400E' }}>
+                Восстановлен черновик заявки — продолжайте с того же места.
+              </div>
+              <button onClick={startOver}
+                style={{
+                  padding: '6px 12px', borderRadius: 7, border: '1.5px solid #FDE68A',
+                  background: '#fff', color: '#92400E', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                }}>
+                Начать заново
+              </button>
+            </div>
+          )}
 
           {/* ─── STEP 1: Request info ─── */}
           {step === 1 && (
@@ -881,82 +1104,80 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
           {/* ─── STEP 2: Employees ─── */}
           {step === 2 && (
             <div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-                <p style={{ margin: 0, fontSize: 13, color: MUTED }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14, gap: 8, flexWrap: 'wrap' }}>
+                <p style={{ margin: 0, fontSize: 13, color: MUTED, flex: '1 1 200px' }}>
                   Добавьте сотрудников. Логин и пароль генерируются автоматически.
                 </p>
-                <button
-                  onClick={addEmployee}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 6,
-                    padding: '7px 14px', borderRadius: 8, border: `1.5px solid ${BLUE}`,
-                    background: '#EBF1FE', color: BLUE, fontSize: 12.5, fontWeight: 600,
-                    cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0,
-                  }}
-                >
-                  <IcPlus size={13} color={BLUE} />
-                  Добавить
-                </button>
+                <div style={{ display: 'flex', gap: 8, flexShrink: 0 }}>
+                  <button
+                    onClick={() => setShowBulk(s => !s)}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      padding: '7px 12px', borderRadius: 8, border: `1.5px solid ${showBulk ? BLUE : '#E3E7F0'}`,
+                      background: showBulk ? '#EBF1FE' : '#fff', color: showBulk ? BLUE : '#374151',
+                      fontSize: 12.5, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap',
+                    }}
+                  >
+                    Вставить списком
+                  </button>
+                  <button
+                    onClick={addEmployee}
+                    style={{
+                      display: 'flex', alignItems: 'center', gap: 6,
+                      padding: '7px 14px', borderRadius: 8, border: `1.5px solid ${BLUE}`,
+                      background: '#EBF1FE', color: BLUE, fontSize: 12.5, fontWeight: 600,
+                      cursor: 'pointer', whiteSpace: 'nowrap',
+                    }}
+                  >
+                    <IcPlus size={13} color={BLUE} />
+                    Добавить
+                  </button>
+                </div>
               </div>
+
+              {/* Bulk paste — one person per line; optional "ФИО | Должность" */}
+              {showBulk && (
+                <div style={{ marginBottom: 14, padding: 12, borderRadius: 10, background: '#F8FAFD', border: '1px solid #E3E7F0' }}>
+                  <p style={{ margin: '0 0 8px', fontSize: 12, color: MUTED, lineHeight: 1.5 }}>
+                    По одному человеку в строке. Можно сразу с должностью: <code style={{ background: '#EBF1FE', padding: '1px 5px', borderRadius: 4 }}>ФИО | Должность</code> (разделитель <b>|</b>, <b>;</b>, <b>,</b> или таб). Удобно вставить из Excel/Word.
+                  </p>
+                  <textarea
+                    value={bulkText}
+                    onChange={e => setBulkText(e.target.value)}
+                    placeholder={'Иванов Иван Иванович | Инженер\nПетров Пётр Петрович, Технолог\nСидоров Сидор Сидорович'}
+                    rows={6}
+                    style={{ ...inputStyle, fontSize: 13, resize: 'vertical', fontFamily: 'inherit', lineHeight: 1.5 }}
+                  />
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 8 }}>
+                    <button onClick={() => { setBulkText(''); setShowBulk(false); }}
+                      style={{ padding: '7px 14px', borderRadius: 8, border: '1.5px solid #E3E7F0', background: '#fff', color: '#374151', fontSize: 12.5, fontWeight: 500, cursor: 'pointer' }}>
+                      Отмена
+                    </button>
+                    <button onClick={applyBulk} disabled={!bulkText.trim()}
+                      style={{
+                        padding: '7px 16px', borderRadius: 8, border: 'none',
+                        background: bulkText.trim() ? NAVY : '#E5E7EB', color: bulkText.trim() ? '#fff' : '#9CA3AF',
+                        fontSize: 12.5, fontWeight: 600, cursor: bulkText.trim() ? 'pointer' : 'not-allowed',
+                      }}>
+                      Добавить {bulkText.split('\n').map(l => l.trim()).filter(Boolean).length || ''} строк
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {errors.employees && <p style={{ color: '#DC2626', fontSize: 12, margin: '0 0 10px' }}>{errors.employees}</p>}
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                 {employees.map((emp, idx) => (
-                  <div key={emp.id} style={{
-                    display: 'grid', gridTemplateColumns: '28px 1fr 1fr 34px', gap: 8, alignItems: 'start',
-                    padding: '10px 12px', borderRadius: 10,
-                    border: `1px solid ${errors[`emp_name_${idx}`] ? '#FECACA' : '#E3E7F0'}`,
-                    background: errors[`emp_name_${idx}`] ? '#FFF7F7' : '#FAFBFF',
-                  }}>
-                    <div style={{
-                      width: 24, height: 24, borderRadius: '50%', background: NAVY,
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 11, fontWeight: 700, color: '#fff', marginTop: 3,
-                    }}>
-                      {idx + 1}
-                    </div>
-                    <div>
-                      <input
-                        value={emp.name}
-                        onChange={e => updateEmployee(emp.id, 'name', e.target.value)}
-                        placeholder="ФИО *"
-                        style={{
-                          ...inputStyle, fontSize: 13,
-                          borderColor: errors[`emp_name_${idx}`] ? '#DC2626' : '#E3E7F0',
-                        }}
-                        onFocus={e => e.target.style.borderColor = BLUE}
-                        onBlur={e => e.target.style.borderColor = errors[`emp_name_${idx}`] ? '#DC2626' : '#E3E7F0'}
-                      />
-                      {errors[`emp_name_${idx}`] && (
-                        <span style={{ fontSize: 10.5, color: '#DC2626' }}>Введите ФИО</span>
-                      )}
-                    </div>
-                    <div>
-                      <input
-                        value={emp.position}
-                        onChange={e => updateEmployee(emp.id, 'position', e.target.value)}
-                        placeholder="Должность"
-                        style={{ ...inputStyle, fontSize: 13 }}
-                        onFocus={e => e.target.style.borderColor = BLUE}
-                        onBlur={e => e.target.style.borderColor = '#E3E7F0'}
-                      />
-                    </div>
-                    <button
-                      onClick={() => removeEmployee(emp.id)}
-                      disabled={employees.length <= 1}
-                      style={{
-                        width: 30, height: 30, borderRadius: 7,
-                        border: '1px solid #E3E7F0', background: '#fff',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        cursor: employees.length <= 1 ? 'not-allowed' : 'pointer',
-                        opacity: employees.length <= 1 ? 0.3 : 1,
-                        marginTop: 2,
-                      }}
-                    >
-                      <IcTrash size={13} color="#DC2626" />
-                    </button>
-                  </div>
+                  <EmployeeRowItem
+                    key={emp.id}
+                    emp={emp}
+                    index={idx}
+                    hasError={!!errors[`emp_${emp.id}`]}
+                    canRemove={employees.length > 1}
+                    onUpdate={updateEmployee}
+                    onRemove={removeEmployee}
+                  />
                 ))}
               </div>
 
@@ -1163,8 +1384,29 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
         {/* Footer */}
         <div style={{
           padding: '16px 24px', borderTop: '1px solid #F3F4F6',
-          display: 'flex', gap: 10, justifyContent: 'flex-end', flexShrink: 0,
+          display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, flexWrap: 'wrap',
         }}>
+          {/* Left: draft save (data is also auto-saved continuously) */}
+          {created ? <span /> : (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button onClick={saveDraftNow} disabled={!hasContent}
+                title="Черновик также сохраняется автоматически"
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '9px 14px', borderRadius: 9, border: '1.5px solid #E3E7F0',
+                  background: '#fff', color: hasContent ? NAVY : '#9CA3AF',
+                  fontSize: 12.5, fontWeight: 600, cursor: hasContent ? 'pointer' : 'not-allowed',
+                }}>
+                💾 Сохранить черновик
+              </button>
+              {draftSavedNote
+                ? <span style={{ fontSize: 11.5, color: '#059669', fontWeight: 600 }}>Сохранено ✓</span>
+                : <span style={{ fontSize: 11, color: '#9CA3AF' }}>сохраняется автоматически</span>}
+            </div>
+          )}
+
+          {/* Right: navigation */}
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
           {created ? (
             <button onClick={onClose}
               style={{
@@ -1185,11 +1427,12 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
                 </button>
               )}
               <button onClick={onClose}
+                title="Введённые данные сохранятся в черновике"
                 style={{
                   padding: '9px 20px', borderRadius: 9, border: '1.5px solid #E3E7F0',
                   background: '#fff', color: '#374151', fontSize: 13.5, fontWeight: 500, cursor: 'pointer',
                 }}>
-                Отмена
+                Закрыть
               </button>
               {step < 4 ? (
                 <button onClick={nextStep}
@@ -1213,6 +1456,7 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
               )}
             </>
           )}
+          </div>
         </div>
       </div>
     </div>
@@ -1583,10 +1827,17 @@ function RequestArchiveModal({ open, onClose }: { open: boolean; onClose: () => 
       <RequestEditView
         request={req}
         publishedCourses={publishedCourses}
+        existingNumbers={requests.map(r => r.requestNumber).filter(n => n !== req.requestNumber)}
         onClose={() => setEditingReq(null)}
         onUpdateUser={updateUser}
         onDeleteUser={deleteUser}
         onAddUsers={(batch) => addUsersBatch(batch, req.organization, req.department, req.requestNumber)}
+        onRenumber={(newNum) => {
+          // Re-stamp every member of this заявка with the new number, then keep the
+          // editor open by re-pointing to the new key.
+          req.members.forEach(m => updateUser(m.id, { requestNumber: newNum }));
+          setEditingReq(newNum);
+        }}
       />
     );
   }
@@ -1759,20 +2010,36 @@ function RequestArchiveModal({ open, onClose }: { open: boolean; onClose: () => 
 // RequestEditView — edit employees of one заявка
 // ═══════════════════════════════════════════════════════════════════════════════
 function RequestEditView({
-  request, publishedCourses, onClose, onUpdateUser, onDeleteUser, onAddUsers,
+  request, publishedCourses, existingNumbers, onClose, onUpdateUser, onDeleteUser, onAddUsers, onRenumber,
 }: {
   request: RequestSummary;
   publishedCourses: { id: string; title: string }[];
+  existingNumbers: string[];
   onClose: () => void;
   onUpdateUser: (id: string, updates: Partial<ManagedUser>) => void;
   onDeleteUser: (id: string) => void;
   onAddUsers: (batch: BatchUserInput[]) => ManagedUser[];
+  onRenumber: (newNum: string) => void;
 }) {
   // Working copy of members (so we batch updates on save)
   const [members, setMembers] = useState(request.members.map(m => ({ ...m })));
   const [newRows, setNewRows] = useState<EmployeeRow[]>([]);
   const [toDelete, setToDelete] = useState<Set<string>>(new Set());
   const [saved, setSaved] = useState(false);
+
+  // Inline edit of the заявка number
+  const [editNum, setEditNum] = useState(false);
+  const [numDraft, setNumDraft] = useState(request.requestNumber);
+  const [numErr, setNumErr] = useState('');
+  const commitNumber = () => {
+    const v = numDraft.trim();
+    if (!v) { setNumErr('Введите номер'); return; }
+    if (v === request.requestNumber) { setEditNum(false); setNumErr(''); return; }
+    if (existingNumbers.includes(v)) { setNumErr('Такой номер уже есть'); return; }
+    onRenumber(v);
+    setEditNum(false);
+    setNumErr('');
+  };
 
   const updMember = (id: string, field: keyof ManagedUser, value: any) => {
     setMembers(prev => prev.map(m => m.id === id ? { ...m, [field]: value } : m));
@@ -1866,9 +2133,43 @@ function RequestEditView({
             background: '#fff', cursor: 'pointer', fontSize: 12, color: MUTED,
           }}>← Назад</button>
           <div style={{ flex: 1 }}>
-            <h2 style={{ margin: 0, fontSize: 16, color: '#0F1629' }}>
-              Заявка №{request.requestNumber}
-            </h2>
+            {editNum ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 16, color: '#0F1629', fontWeight: 600 }}>Заявка №</span>
+                <input
+                  autoFocus
+                  value={numDraft}
+                  onChange={e => { setNumDraft(e.target.value); setNumErr(''); }}
+                  onKeyDown={e => { if (e.key === 'Enter') commitNumber(); if (e.key === 'Escape') { setEditNum(false); setNumDraft(request.requestNumber); setNumErr(''); } }}
+                  style={{
+                    width: 110, padding: '5px 9px', borderRadius: 7, fontSize: 14, fontWeight: 600,
+                    border: `1.5px solid ${numErr ? '#DC2626' : BLUE}`, outline: 'none',
+                  }}
+                />
+                <button onClick={commitNumber} style={{
+                  padding: '5px 12px', borderRadius: 7, border: 'none', background: '#059669',
+                  color: '#fff', fontSize: 12.5, fontWeight: 600, cursor: 'pointer',
+                }}>Сохранить</button>
+                <button onClick={() => { setEditNum(false); setNumDraft(request.requestNumber); setNumErr(''); }} style={{
+                  padding: '5px 10px', borderRadius: 7, border: `1.5px solid ${BORDER}`, background: '#fff',
+                  color: '#374151', fontSize: 12.5, cursor: 'pointer',
+                }}>Отмена</button>
+                {numErr && <span style={{ fontSize: 11.5, color: '#DC2626', width: '100%' }}>{numErr}</span>}
+              </div>
+            ) : (
+              <h2 style={{ margin: 0, fontSize: 16, color: '#0F1629', display: 'flex', alignItems: 'center', gap: 8 }}>
+                Заявка №{request.requestNumber}
+                <button
+                  onClick={() => { setNumDraft(request.requestNumber); setEditNum(true); setNumErr(''); }}
+                  title="Изменить номер заявки"
+                  style={{
+                    padding: '3px 10px', borderRadius: 6, border: `1.5px solid ${BORDER}`,
+                    background: '#fff', color: BLUE, fontSize: 11.5, fontWeight: 600, cursor: 'pointer',
+                  }}>
+                  Изменить №
+                </button>
+              </h2>
+            )}
             <p style={{ margin: '2px 0 0', fontSize: 12, color: MUTED }}>
               {request.organization} · {request.department || '— без отдела —'}
             </p>
