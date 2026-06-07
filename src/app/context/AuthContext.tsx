@@ -27,6 +27,8 @@ export interface User {
   organization: string;
   enrolledCourses: string[];
   completedCourses: string[];
+  /** ISO timestamp of the last successful login (stamped by the server). */
+  lastLoginAt?: string;
 }
 
 interface AuthContextType {

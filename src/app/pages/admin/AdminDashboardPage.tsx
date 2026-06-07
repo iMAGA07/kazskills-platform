@@ -533,6 +533,52 @@ async function exportBatchCredentials(
   downloadBlob(blob, `Логины_пароли_заявка_${requestNumber}_${fileDate()}.docx`);
 }
 
+// PDF version of the credentials sheet — opens on any phone (incl. old ones) and the
+// login link is a real tappable hyperlink.
+async function exportBatchCredentialsPdf(
+  requestNumber: string,
+  org: string,
+  createdUsers: { name: string; login: string; password: string }[],
+  tenantSlug?: string | null,
+) {
+  const siteUrl = tenantSlug ? `https://${tenantSlug}.kazskills.kz` : 'https://kazskills.kz';
+
+  const rows = createdUsers.map((u, i) => `<tr>
+    <td style="${RPT_TD}text-align:center;">${i + 1}</td>
+    <td style="${RPT_TD}">${escHtml(u.name)}</td>
+    <td style="${RPT_TD}font-weight:bold;">${escHtml(u.login)}</td>
+    <td style="${RPT_TD}font-weight:bold;">${escHtml(u.password)}</td>
+  </tr>`).join('');
+
+  const html = `<div style="width:760px;box-sizing:border-box;padding:34px 36px;background:#fff;${RPT_HEAD}">
+    <div style="font-size:22px;font-weight:bold;margin-bottom:10px;">Логины и пароли</div>
+    <div style="font-size:14px;font-weight:bold;">Организация: ${escHtml(org)}</div>
+    <div style="font-size:14px;font-weight:bold;">Номер заявки: ${escHtml(requestNumber)}</div>
+    <div style="font-size:12.5px;color:#666;margin-bottom:14px;">Дата формирования: ${todayStr()}</div>
+
+    <div style="font-size:15px;font-weight:bold;margin-bottom:8px;">Краткая инструкция по входу</div>
+    <div style="font-size:13px;line-height:1.7;margin-bottom:14px;">
+      1. Откройте в браузере ссылку: <span id="login-url" style="color:#1B3D84;text-decoration:underline;font-weight:bold;">${siteUrl}</span><br>
+      2. Введите логин и пароль из таблицы ниже.<br>
+      3. Нажмите кнопку «Войти».<br>
+      4. В разделе «Мои курсы» выберите назначенный курс, изучите материалы и пройдите итоговый тест.<br>
+      5. После успешной сдачи теста протокол появится в разделе «Протоколы».
+    </div>
+    <div style="font-size:12.5px;color:#374151;margin-bottom:16px;">
+      <b>Служба поддержки:</b> при вопросах напишите в WhatsApp +7 (771) 615-84-28 (или кнопка чата на сайте). Укажите ФИО, организацию, должность и описание проблемы.
+    </div>
+
+    <table style="width:100%;border-collapse:collapse;">
+      <thead><tr>
+        <th style="${RPT_TH}width:34px;">№</th><th style="${RPT_TH}">Ф. И. О</th>
+        <th style="${RPT_TH}">Логин</th><th style="${RPT_TH}">Пароль</th>
+      </tr></thead><tbody>${rows}</tbody>
+    </table>
+  </div>`;
+
+  await htmlToPdf(html, `Логины_пароли_заявка_${requestNumber}_${fileDate()}.pdf`, [{ selector: '#login-url', url: siteUrl }]);
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // BatchCreateModal — 4-step wizard
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -898,16 +944,12 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
   };
 
   // ── Export credentials ──
+  const credentialList = () => employees.map(emp => ({ name: emp.name, login: emp.login, password: emp.password }));
   const handleExport = () => {
-    exportBatchCredentials(
-      requestNumber, org,
-      employees.map(emp => ({
-        name: emp.name,
-        login: emp.login,
-        password: emp.password,
-      })),
-      tenantOrg?.slug ?? null,
-    );
+    exportBatchCredentials(requestNumber, org, credentialList(), tenantOrg?.slug ?? null);
+  };
+  const handleExportPdf = () => {
+    exportBatchCredentialsPdf(requestNumber, org, credentialList(), tenantOrg?.slug ?? null);
   };
 
   // Regenerate all logins/passwords
@@ -1372,20 +1414,33 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
                 Создано <strong style={{ color: '#0F1629' }}>{employees.length}</strong> пользователей по заявке <strong style={{ color: '#0F1629' }}>#{requestNumber}</strong>
               </p>
 
-              <button
-                onClick={handleExport}
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 8,
-                  padding: '12px 28px', borderRadius: 10, border: 'none',
-                  background: NAVY, color: '#fff', fontSize: 14, fontWeight: 600,
-                  cursor: 'pointer', boxShadow: '0 4px 14px rgba(27,61,132,0.3)',
-                }}
-              >
-                <IcDownload size={17} color="#fff" />
-                Экспортировать в Word
-              </button>
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+                <button
+                  onClick={handleExport}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 8,
+                    padding: '12px 24px', borderRadius: 10, border: `1.5px solid ${NAVY}`,
+                    background: '#fff', color: NAVY, fontSize: 14, fontWeight: 600, cursor: 'pointer',
+                  }}
+                >
+                  <IcDownload size={17} color={NAVY} />
+                  Word
+                </button>
+                <button
+                  onClick={handleExportPdf}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 8,
+                    padding: '12px 24px', borderRadius: 10, border: 'none',
+                    background: NAVY, color: '#fff', fontSize: 14, fontWeight: 600,
+                    cursor: 'pointer', boxShadow: '0 4px 14px rgba(27,61,132,0.3)',
+                  }}
+                >
+                  <IcDownload size={17} color="#fff" />
+                  PDF
+                </button>
+              </div>
               <p style={{ fontSize: 11.5, color: '#9CA3AF', margin: '10px 0 0' }}>
-                Файл с ФИО, логинами и паролями будет скачан на ваше устройство
+                Файл с ФИО, логинами и паролями (PDF — со ссылкой для входа, удобно с телефона)
               </p>
             </div>
           )}
@@ -1937,21 +1992,34 @@ function RequestArchiveModal({ open, onClose }: { open: boolean; onClose: () => 
                     </div>
                   </div>
                   <button
-                    onClick={() => {
-                      exportBatchCredentials(
-                        req.requestNumber, req.organization,
-                        req.members.map(m => ({ name: m.name, login: m.email, password: m.password })),
-                        tenantOrg?.slug ?? null,
-                      );
-                    }}
+                    onClick={() => exportBatchCredentials(
+                      req.requestNumber, req.organization,
+                      req.members.map(m => ({ name: m.name, login: m.email, password: m.password })),
+                      tenantOrg?.slug ?? null,
+                    )}
                     style={{
-                      padding: '8px 12px', borderRadius: 8, border: `1.5px solid ${BORDER}`,
+                      padding: '8px 11px', borderRadius: 8, border: `1.5px solid ${BORDER}`,
                       background: '#fff', color: '#374151', cursor: 'pointer',
-                      fontSize: 12, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 6,
+                      fontSize: 12, fontWeight: 500, display: 'flex', alignItems: 'center', gap: 5,
                     }}
-                    title="Скачать логины/пароли"
+                    title="Скачать логины/пароли в Word"
                   >
-                    <IcDownload size={13} color="currentColor" /> .docx
+                    <IcDownload size={13} color="currentColor" /> Word
+                  </button>
+                  <button
+                    onClick={() => exportBatchCredentialsPdf(
+                      req.requestNumber, req.organization,
+                      req.members.map(m => ({ name: m.name, login: m.email, password: m.password })),
+                      tenantOrg?.slug ?? null,
+                    )}
+                    style={{
+                      padding: '8px 11px', borderRadius: 8, border: 'none',
+                      background: NAVY, color: '#fff', cursor: 'pointer',
+                      fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5,
+                    }}
+                    title="Скачать логины/пароли в PDF (со ссылкой)"
+                  >
+                    <IcDownload size={13} color="#fff" /> PDF
                   </button>
                   <button
                     onClick={() => setEditingReq(req.requestNumber)}

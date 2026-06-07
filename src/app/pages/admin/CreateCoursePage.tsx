@@ -156,11 +156,18 @@ export default function CreateCoursePage() {
   const [maxAttempts,  setMaxAttempts]  = useState(3);
   const [published,    setPublished]    = useState(false);
 
-  // Load existing course for editing
+  // Load existing course for editing — exactly ONCE, when the course first becomes
+  // available. Without this guard the effect re-fires every time `getCourse` changes
+  // identity (which happens on every `setAllCourses`, incl. our own save), wiping the
+  // admin's in-progress edits (replaced material, edited questions) — the root cause of
+  // "I had to recreate the whole course with the questions".
+  const loadedRef = useRef<string | null>(null);
   useEffect(() => {
     if (!editId) return;
+    if (loadedRef.current === editId) return;
     const course = getCourse(editId);
-    if (!course) return;
+    if (!course) return;            // courses not fetched yet — wait for the next run
+    loadedRef.current = editId;
     setTitle(course.title);
     setDesc(course.description);
     setMaterials(course.lessons.map(l => {
@@ -210,6 +217,23 @@ export default function CreateCoursePage() {
 
   // ── Save ──
   const handleSave = async () => {
+    // Don't save while a file is still uploading, or with an incomplete material —
+    // that would persist a lesson with an empty URL and break the course.
+    if (uploadingIds.size > 0) {
+      setStep(1); setShowMatErrors(true);
+      setSaveError('Дождитесь окончания загрузки файлов перед сохранением.');
+      return;
+    }
+    if (materials.some(m => !m.title.trim() || !m.url.trim())) {
+      setStep(1); setShowMatErrors(true);
+      setSaveError('Заполните все материалы: у каждого должны быть название и файл/ссылка.');
+      return;
+    }
+    if (questions.some(q => !q.text.trim() || q.points <= 0)) {
+      setStep(2);
+      setSaveError('Проверьте вопросы: у каждого должен быть текст и баллы больше 0.');
+      return;
+    }
     setSaving(true);
     setSaveError('');
     try {

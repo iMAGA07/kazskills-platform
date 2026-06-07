@@ -437,6 +437,14 @@ app.post("/make-server-3ed1835c/auth/login", async (c) => {
     );
     if (!found) return c.json({ error: "Invalid credentials" }, 401);
 
+    // Stamp last-login time on the user record (shown in the admin "Подробнее" view).
+    try {
+      found.lastLoginAt = new Date().toISOString();
+      await kv.set(`user:${found.id}`, found);
+    } catch (e) {
+      console.log("Could not stamp lastLoginAt:", e);
+    }
+
     const token = crypto.randomUUID();
     const session: Session = {
       token,

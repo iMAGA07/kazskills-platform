@@ -75,7 +75,11 @@
       "Bash(sed -n '333,345p' src/app/pages/student/CourseDetailPage.tsx)",
       "Bash(sed -n '270,279p' src/app/pages/admin/CreateCoursePage.tsx)",
       "Bash(sed -n '963,969p' src/app/pages/admin/AdminDashboardPage.tsx)",
-      "Bash(sed -n '45,52p' src/app/components/shared/InstructionModal.tsx)"
+      "Bash(sed -n '45,52p' src/app/components/shared/InstructionModal.tsx)",
+      "Bash(cd /Users/imangaali/Documents/STK/.claude/worktrees/jovial-jennings-1ae29f)",
+      "Bash(sed -n '/export function getOrganizationSlug/,/^}/p' src/app/lib/organization.ts)",
+      "Bash(cd /Users/imangaali/Documents/STK 2>/dev/null; echo \"=== Desktop edge-function dir \\(separately deployed?\\) ===\"; ls -la /Users/imangaali/Desktop/kazskills-edge-function 2>/dev/null; echo \"=== does the deployed copy on Desktop have /upload-url and what guards? ===\"; grep -n \"upload-url\\\\|requireAdmin\\\\|requireAuth\\\\|app.put.*courses\\\\|createSignedUploadUrl\" /Users/imangaali/Desktop/kazskills-edge-function/*.tsx /Users/imangaali/Desktop/kazskills-edge-function/**/*.tsx 2>/dev/null | head -40)",
+      "Bash(grep -c \"requireAuth, async \\(c\\) => {\" supabase/functions/server/index.tsx)"
     ]
   }
 }

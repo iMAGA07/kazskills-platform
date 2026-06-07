@@ -227,8 +227,9 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
     const res  = await fetch(`${BASE}/courses`, {
       method: 'POST', headers: authHeaders(), body: JSON.stringify(payload),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error ?? 'Failed to create course');
+    if (handle401(res)) throw new Error('Сессия истекла — войдите в админку заново и повторите.');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error ?? `Не удалось создать курс (ошибка ${res.status})`);
     const course = normalizeCourse(data);
     setAllCourses(prev => [...prev, course]);
     return course;
@@ -238,8 +239,9 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
     const res  = await fetch(`${BASE}/courses/${id}`, {
       method: 'PUT', headers: authHeaders(), body: JSON.stringify(input),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error ?? 'Failed to update course');
+    if (handle401(res)) throw new Error('Сессия истекла — войдите в админку заново и повторите сохранение.');
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error ?? `Не удалось сохранить курс (ошибка ${res.status})`);
     const course = normalizeCourse(data);
     setAllCourses(prev => prev.map(c => c.id === id ? course : c));
     return course;

@@ -589,8 +589,9 @@ function UserFormModal({ open, onClose, editUser, organizations }: {
 // ────────────────────────────────────────────────
 // Row action menu
 // ────────────────────────────────────────────────
-function RowMenu({ user, onEdit, onDelete, onToggleStatus, onProtocols }: {
+function RowMenu({ user, onDetails, onEdit, onDelete, onToggleStatus, onProtocols }: {
   user: ManagedUser;
+  onDetails: () => void;
   onEdit: () => void;
   onDelete: () => void;
   onToggleStatus: () => void;
@@ -636,6 +637,7 @@ function RowMenu({ user, onEdit, onDelete, onToggleStatus, onProtocols }: {
           border: '1px solid #E3E7F0', minWidth: '168px', padding: '4px',
         }}>
           {[
+            { icon: <IcPerson size={14} color="#2B5CE6" />, label: 'Подробнее', action: () => { setOpen(false); onDetails(); }, danger: false },
             { icon: <IcEdit size={14} color="#374151" />, label: 'Редактировать', action: () => { setOpen(false); onEdit(); }, danger: false },
             { icon: <IcDocument size={14} color="#2B5CE6" />, label: 'Протоколы', action: () => { setOpen(false); onProtocols(); }, danger: false },
             {
@@ -716,6 +718,7 @@ export default function AdminUsersPage() {
   const [deleteTarget, setDeleteTarget] = useState<ManagedUser | null>(null);
   const [previewUser, setPreviewUser] = useState<ManagedUser | null>(null);
   const [protocolsUser, setProtocolsUser] = useState<ManagedUser | null>(null);
+  const [detailsUser, setDetailsUser] = useState<ManagedUser | null>(null);
 
   // unique organizations
   const organizations = useMemo(() => {
@@ -1049,6 +1052,7 @@ export default function AdminUsersPage() {
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <RowMenu
                   user={u}
+                  onDetails={() => setDetailsUser(u)}
                   onEdit={() => openEdit(u)}
                   onDelete={() => setDeleteTarget(u)}
                   onToggleStatus={() => toggleStatus(u.id)}
@@ -1093,6 +1097,11 @@ export default function AdminUsersPage() {
       {/* Per-user protocols modal */}
       {protocolsUser && (
         <UserProtocolsModal user={protocolsUser} onClose={() => setProtocolsUser(null)} />
+      )}
+
+      {/* Full user details modal */}
+      {detailsUser && (
+        <UserDetailsModal user={detailsUser} onClose={() => setDetailsUser(null)} />
       )}
     </div>
   );
@@ -1179,6 +1188,177 @@ function UserProtocolsModal({ user, onClose }: { user: ManagedUser; onClose: () 
                 </div>
               ))}
             </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Full user details modal ──────────────────────────────────────────────────
+type DetailStatus = 'passed' | 'failed' | 'in_progress' | 'not_started';
+const DETAIL_STATUS_META: Record<DetailStatus, { label: string; color: string; bg: string }> = {
+  passed:      { label: 'Сдан',      color: '#059669', bg: '#ECFDF5' },
+  failed:      { label: 'Не сдан',   color: '#DC2626', bg: '#FEF2F2' },
+  in_progress: { label: 'В процессе', color: '#D97706', bg: '#FFFBEB' },
+  not_started: { label: 'Не начат',  color: '#6B7280', bg: '#F4F6FB' },
+};
+
+interface CourseStat {
+  id: string; title: string; status: DetailStatus;
+  bestScore: number | null; attempts: number; lastDate: string | null; passingScore: number;
+}
+
+function UserDetailsModal({ user, onClose }: { user: ManagedUser; onClose: () => void }) {
+  const { courses, getProgress } = useCourses();
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState<CourseStat[]>([]);
+
+  useEffect(() => {
+    const enrolled = new Set(user.enrolledCourses ?? []);
+    const assigned = sortCourses(courses.filter(c => c.published && enrolled.has(c.id)));
+    if (assigned.length === 0) { setStats([]); setLoading(false); return; }
+    let alive = true;
+    Promise.all(assigned.map(c => getProgress(user.id, c.id).then(p => ({ c, p })).catch(() => ({ c, p: null as any }))))
+      .then(rows => {
+        if (!alive) return;
+        const out: CourseStat[] = rows.map(({ c, p }) => {
+          const attempts: any[] = p?.attempts ?? [];
+          const passedAttempts = attempts.filter(a => a.passed);
+          const ranked = (passedAttempts.length ? passedAttempts : attempts).slice().sort((a, b) => b.score - a.score);
+          const best = ranked[0];
+          const lastDate = attempts.length
+            ? attempts.map(a => a.completedAt).filter(Boolean).sort().slice(-1)[0] ?? null
+            : null;
+          let status: DetailStatus = 'not_started';
+          if (passedAttempts.length || p?.status === 'completed') status = 'passed';
+          else if (attempts.length) status = 'failed';
+          else if (p?.status === 'in_progress' || (p?.completedLessons?.length ?? 0) > 0) status = 'in_progress';
+          return {
+            id: c.id, title: c.title, status,
+            bestScore: best ? Math.round(best.score) : null,
+            attempts: attempts.length, lastDate,
+            passingScore: c.test?.passingScore ?? 70,
+          };
+        });
+        setStats(out);
+      })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+    // eslint-disable-next-line
+  }, [user.id]);
+
+  const summary = useMemo(() => {
+    const by = (s: DetailStatus) => stats.filter(x => x.status === s).length;
+    return {
+      assigned: stats.length,
+      passed: by('passed'), failed: by('failed'),
+      inProgress: by('in_progress'), notStarted: by('not_started'),
+      totalAttempts: stats.reduce((s, x) => s + x.attempts, 0),
+    };
+  }, [stats]);
+
+  const rl = ROLE_META[user.role] ?? ROLE_META.student;
+  const sl = STATUS_META[user.status] ?? STATUS_META.active;
+  const fmtDate = (d?: string) => d ? new Date(d).toLocaleDateString('ru-RU') : '—';
+  const fmtDateTime = (d?: string) => d ? new Date(d).toLocaleString('ru-RU', { dateStyle: 'medium', timeStyle: 'short' }) : null;
+
+  const infoRows: { label: string; value: string }[] = [
+    { label: 'Логин', value: user.email || '—' },
+    { label: 'Пароль', value: user.password || '—' },
+    { label: 'Телефон', value: user.phone || '—' },
+    { label: 'Организация', value: user.organization || '—' },
+    { label: 'Отдел', value: user.department || '—' },
+    { label: 'Должность', value: user.position || '—' },
+    { label: 'Заявка №', value: user.requestNumber || '—' },
+    { label: 'Зарегистрирован', value: fmtDate(user.createdAt) },
+    { label: 'Последний вход', value: fmtDateTime(user.lastLoginAt) ?? 'ещё не входил' },
+  ];
+
+  const initial = (user.name || '?').trim().charAt(0).toUpperCase();
+
+  return (
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(15,22,41,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 640, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+        {/* Header */}
+        <div style={{ padding: '18px 20px', borderBottom: '1px solid #EEF1F8', display: 'flex', alignItems: 'center', gap: 12 }}>
+          {user.avatar
+            ? <img src={user.avatar} alt="" style={{ width: 46, height: 46, borderRadius: 11, objectFit: 'cover', flexShrink: 0 }} />
+            : <div style={{ width: 46, height: 46, borderRadius: 11, background: '#1B3D84', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 700, flexShrink: 0 }}>{initial}</div>}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: '#0F1629', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.name}</div>
+            <div style={{ fontSize: 12.5, color: '#6B7280', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {[user.position, user.department, user.organization].filter(Boolean).join(' · ') || '—'}
+            </div>
+          </div>
+          <span style={{ fontSize: 11, fontWeight: 600, color: rl.color, background: rl.bg, padding: '4px 9px', borderRadius: 7 }}>{rl.label}</span>
+          <span style={{ fontSize: 11, fontWeight: 600, color: sl.color, background: sl.bg, padding: '4px 9px', borderRadius: 7 }}>{sl.label}</span>
+          <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #E3E7F0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <IcClose size={14} color="#6B7280" />
+          </button>
+        </div>
+
+        <div style={{ padding: 18, overflowY: 'auto' }}>
+          {/* Profile grid */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px 18px', marginBottom: 18 }}>
+            {infoRows.map(r => (
+              <div key={r.label}>
+                <div style={{ fontSize: 10.5, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>{r.label}</div>
+                <div style={{ fontSize: 13.5, color: '#0F1629', fontWeight: 500, wordBreak: 'break-word' }}>{r.value}</div>
+              </div>
+            ))}
+          </div>
+
+          {/* Summary strip */}
+          {user.role === 'student' && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+              {[
+                { label: 'Назначено', value: summary.assigned, color: '#2B5CE6', bg: '#EBF1FE' },
+                { label: 'Сдано', value: summary.passed, color: '#059669', bg: '#ECFDF5' },
+                { label: 'Не сдано', value: summary.failed, color: '#DC2626', bg: '#FEF2F2' },
+                { label: 'В процессе', value: summary.inProgress, color: '#D97706', bg: '#FFFBEB' },
+                { label: 'Не начато', value: summary.notStarted, color: '#6B7280', bg: '#F4F6FB' },
+                { label: 'Всего попыток', value: summary.totalAttempts, color: '#0F1629', bg: '#F4F6FB' },
+              ].map(s => (
+                <div key={s.label} style={{ flex: '1 1 90px', padding: '9px 12px', borderRadius: 10, background: s.bg, textAlign: 'center' }}>
+                  <div style={{ fontSize: 19, fontWeight: 800, color: s.color, lineHeight: 1 }}>{s.value}</div>
+                  <div style={{ fontSize: 10.5, color: s.color, marginTop: 3, fontWeight: 600 }}>{s.label}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Per-course breakdown */}
+          {user.role === 'student' && (
+            <>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
+                Курсы и результаты
+              </div>
+              {loading ? (
+                <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Загрузка статистики…</div>
+              ) : stats.length === 0 ? (
+                <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Пользователю не назначены курсы.</div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {stats.map(s => {
+                    const m = DETAIL_STATUS_META[s.status];
+                    return (
+                      <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 13px', borderRadius: 10, border: '1px solid #E8ECF6' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13.5, fontWeight: 600, color: '#0F1629', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.title}</div>
+                          <div style={{ fontSize: 11.5, color: '#6B7280', marginTop: 2 }}>
+                            {s.bestScore !== null ? `Лучший балл: ${s.bestScore}% (порог ${s.passingScore}%)` : `Порог ${s.passingScore}%`}
+                            {' · '}Попыток: {s.attempts}
+                            {s.lastDate ? ` · Последняя: ${fmtDate(s.lastDate)}` : ''}
+                          </div>
+                        </div>
+                        <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 700, color: m.color, background: m.bg, padding: '5px 10px', borderRadius: 8 }}>{m.label}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
