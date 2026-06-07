@@ -5,6 +5,42 @@ import { IcCamera, IcUpload, IcClose, IcCheck, IcRefresh } from '../Icons';
 
 const BASE = `https://${projectId}.supabase.co/functions/v1/make-server-3ed1835c`;
 
+function fileToDataURL(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = () => reject(new Error('read'));
+    r.readAsDataURL(file);
+  });
+}
+
+// Centre-crop any image to a portrait 3×4 (600×800) JPEG on a white background —
+// keeps uploaded photos in the same official document format as camera shots.
+function cropImageTo34(dataUrl: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      const targetAspect = 3 / 4;
+      const iw = img.naturalWidth, ih = img.naturalHeight;
+      const ia = iw / ih;
+      let cw: number, ch: number, cx: number, cy: number;
+      if (ia > targetAspect) { ch = ih; cw = Math.round(ih * targetAspect); cx = Math.round((iw - cw) / 2); cy = 0; }
+      else { cw = iw; ch = Math.round(iw / targetAspect); cx = 0; cy = Math.round((ih - ch) / 2); }
+      const outW = 600, outH = 800;
+      const cv = document.createElement('canvas');
+      cv.width = outW; cv.height = outH;
+      const ctx = cv.getContext('2d');
+      if (!ctx) { reject(new Error('ctx')); return; }
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, outW, outH);
+      ctx.drawImage(img, cx, cy, cw, ch, 0, 0, outW, outH);
+      resolve(cv.toDataURL('image/jpeg', 0.92));
+    };
+    img.onerror = () => reject(new Error('img'));
+    img.src = dataUrl;
+  });
+}
+
 interface Props {
   open: boolean;
   onClose: () => void;
@@ -145,10 +181,13 @@ export function PhotoCaptureModal({ open, onClose, onSaved, title, hint }: Props
       toast.error('Файл больше 5 МБ');
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => setPreview(String(reader.result));
-    reader.onerror = () => toast.error('Не удалось прочитать файл');
-    reader.readAsDataURL(file);
+    try {
+      const raw = await fileToDataURL(file);
+      const cropped = await cropImageTo34(raw);   // centre-crop to official 3×4
+      setPreview(cropped);
+    } catch {
+      toast.error('Не удалось обработать изображение');
+    }
   }
 
   async function save() {
@@ -275,6 +314,7 @@ export function PhotoCaptureModal({ open, onClose, onSaved, title, hint }: Props
               <img src={preview} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             </div>
           ) : tab === 'camera' ? (
+            <>
             <div style={{
               borderRadius: 12, overflow: 'hidden', position: 'relative',
               border: '1px solid #E3E7F0', background: '#0F1629',
@@ -284,13 +324,23 @@ export function PhotoCaptureModal({ open, onClose, onSaved, title, hint }: Props
                 ref={videoRef} autoPlay playsInline muted
                 style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)' }}
               />
-              {/* 3×4 framing guide */}
+              {/* Passport-style 3×4 face guide: darken everything except a head
+                  oval so the user centres their face like on official documents. */}
               {cameraReady && (
-                <div style={{
-                  position: 'absolute', inset: '8% 18%',
-                  border: '2px dashed rgba(255,255,255,0.55)', borderRadius: 8,
-                  pointerEvents: 'none',
-                }} />
+                <svg viewBox="0 0 300 400" preserveAspectRatio="none"
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', pointerEvents: 'none' }}>
+                  <defs>
+                    <mask id="faceHole">
+                      <rect width="300" height="400" fill="white" />
+                      <ellipse cx="150" cy="168" rx="86" ry="120" fill="black" />
+                    </mask>
+                  </defs>
+                  <rect width="300" height="400" fill="rgba(15,22,41,0.42)" mask="url(#faceHole)" />
+                  <ellipse cx="150" cy="168" rx="86" ry="120" fill="none"
+                    stroke="rgba(255,255,255,0.85)" strokeWidth="2.5" strokeDasharray="8 6" />
+                  <text x="150" y="372" textAnchor="middle" fill="rgba(255,255,255,0.9)"
+                    fontSize="15" fontWeight="600" fontFamily="Arial, sans-serif">Лицо в овале · 3×4</text>
+                </svg>
               )}
               {!cameraReady && !cameraError && (
                 <div style={{
@@ -313,6 +363,19 @@ export function PhotoCaptureModal({ open, onClose, onSaved, title, hint }: Props
                 </div>
               )}
             </div>
+            {/* Capture instructions */}
+            <div style={{ marginTop: 12, padding: '11px 13px', borderRadius: 10, background: '#F4F8FF', border: '1px solid #DCE8FF' }}>
+              <div style={{ fontSize: 12.5, fontWeight: 600, color: '#1B3D84', marginBottom: 5 }}>
+                Фото 3×4 как на документы:
+              </div>
+              <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: '#475569', lineHeight: 1.65 }}>
+                <li>лицо в овале, анфас, прямой взгляд;</li>
+                <li>ровный светлый фон (лучше белый);</li>
+                <li>без головного убора и тёмных очков;</li>
+                <li>хорошее освещение, без бликов.</li>
+              </ul>
+            </div>
+            </>
           ) : (
             <label style={{
               display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
@@ -322,7 +385,10 @@ export function PhotoCaptureModal({ open, onClose, onSaved, title, hint }: Props
             }}>
               <IcUpload size={28} color="#2B5CE6" />
               <div style={{ fontSize: 14, fontWeight: 600, color: '#1B3D84' }}>Выбрать файл</div>
-              <div style={{ fontSize: 12, color: '#6B7280' }}>PNG · JPG · до 5 МБ</div>
+              <div style={{ fontSize: 12.5, color: '#374151', textAlign: 'center', lineHeight: 1.6, maxWidth: 320 }}>
+                Загрузите фото <b>3×4 на белом фоне</b> (как на паспорт/документы) для вашего сертификата: лицо анфас, видны плечи.
+              </div>
+              <div style={{ fontSize: 11.5, color: '#9CA3AF' }}>PNG · JPG · до 5 МБ · обрежем до 3×4</div>
               <input
                 type="file" accept="image/*"
                 onChange={e => handleFile(e.target.files?.[0])}
