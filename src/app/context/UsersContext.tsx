@@ -283,6 +283,8 @@ interface UsersContextType {
   updateUser: (id: string, updates: Partial<ManagedUser>) => void;
   deleteUser: (id: string) => void;
   toggleStatus: (id: string) => void;
+  /** Force a fresh pull of users from the server (e.g. to refresh last-login). */
+  refreshUsers: () => Promise<void>;
 }
 
 const UsersContext = createContext<UsersContextType>({
@@ -293,6 +295,7 @@ const UsersContext = createContext<UsersContextType>({
   updateUser: () => {},
   deleteUser: () => {},
   toggleStatus: () => {},
+  refreshUsers: async () => {},
 });
 
 export function UsersProvider({ children }: { children: React.ReactNode }) {
@@ -432,7 +435,7 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   return (
-    <UsersContext.Provider value={{ users, allUsers, addUser, addUsersBatch, updateUser, deleteUser, toggleStatus }}>
+    <UsersContext.Provider value={{ users, allUsers, addUser, addUsersBatch, updateUser, deleteUser, toggleStatus, refreshUsers: syncFromServer }}>
       {children}
     </UsersContext.Provider>
   );

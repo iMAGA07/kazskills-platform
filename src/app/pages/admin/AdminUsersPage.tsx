@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useUsers, type ManagedUser } from '../../context/UsersContext';
 import { useCourses, sortCourses } from '../../context/CoursesContext';
 import { getCurrentOrganization } from '../../lib/organization';
@@ -9,7 +10,7 @@ import {
   IcBook, IcMedal, IcEdit, IcTrash, IcClose, IcBuilding,
   IcCheck, IcSortAsc, IcSortDesc, IcChevronDown, IcMail,
   IcPhone, IcBriefcase, IcLock, IcMore, IcCheckCircle, IcWarning,
-  IcDocument, IcDownload,
+  IcDocument, IcDownload, IcClock, IcXCircle, IcTarget, IcRefresh,
 } from '../../components/Icons';
 
 // ────────────────────────────────────────────────
@@ -598,66 +599,84 @@ function RowMenu({ user, onDetails, onEdit, onDelete, onToggleStatus, onProtocol
   onProtocols: () => void;
 }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
+  const [coords, setCoords] = useState<{ right: number; top?: number; bottom?: number } | null>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const items = [
+    { icon: <IcPerson size={14} color="#2B5CE6" />, label: 'Подробнее', action: onDetails, danger: false },
+    { icon: <IcEdit size={14} color="#374151" />, label: 'Редактировать', action: onEdit, danger: false },
+    { icon: <IcDocument size={14} color="#2B5CE6" />, label: 'Протоколы', action: onProtocols, danger: false },
+    {
+      icon: user.status === 'active' ? <IcLock size={14} color="#6B7280" /> : <IcCheckCircle size={14} color="#2B5CE6" />,
+      label: user.status === 'active' ? 'Заблокировать' : 'Разблокировать',
+      action: onToggleStatus, danger: false,
+    },
+    { icon: <IcTrash size={14} color="#DC2626" />, label: 'Удалить', action: onDelete, danger: true },
+  ];
+
+  // Open as a fixed-position portal so the menu is never clipped by the table's
+  // overflow container, and flip upward when there isn't room below.
+  const openMenu = () => {
+    const r = btnRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const estH = items.length * 38 + 12;
+    const flipUp = window.innerHeight - r.bottom < estH && r.top > estH;
+    setCoords({
+      right: Math.max(8, window.innerWidth - r.right),
+      ...(flipUp ? { bottom: window.innerHeight - r.top + 6 } : { top: r.bottom + 6 }),
+    });
+    setOpen(true);
+  };
 
   useEffect(() => {
     if (!open) return;
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (menuRef.current?.contains(t) || btnRef.current?.contains(t)) return;
+      setOpen(false);
     };
-    document.addEventListener('mousedown', handler);
-    return () => document.removeEventListener('mousedown', handler);
+    const close = () => setOpen(false);
+    document.addEventListener('mousedown', onDown);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
   }, [open]);
 
   return (
-    <div ref={ref} style={{ position: 'relative' }}>
+    <>
       <button
-        onClick={() => setOpen(p => !p)}
+        ref={btnRef}
+        onClick={() => (open ? setOpen(false) : openMenu())}
         style={{
-          width: 30, height: 30, borderRadius: '7px', background: open ? '#F4F6FB' : 'transparent',
-          border: `1px solid ${open ? '#E3E7F0' : 'transparent'}`,
+          width: 30, height: 30, borderRadius: '7px', background: open ? '#EBF1FE' : 'transparent',
+          border: `1px solid ${open ? '#BFDBFE' : 'transparent'}`,
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           cursor: 'pointer', transition: 'all 0.12s',
         }}
-        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = '#F4F6FB'; (e.currentTarget as HTMLButtonElement).style.borderColor = '#E3E7F0'; }}
-        onMouseLeave={e => {
-          if (!open) {
-            (e.currentTarget as HTMLButtonElement).style.background = 'transparent';
-            (e.currentTarget as HTMLButtonElement).style.borderColor = 'transparent';
-          }
-        }}
       >
-        <IcMore size={15} color="#9CA3AF" />
+        <IcMore size={15} color={open ? '#2B5CE6' : '#9CA3AF'} />
       </button>
 
-      {open && (
-        <div style={{
-          position: 'absolute', right: 0, top: '36px', zIndex: 100,
-          background: '#fff', borderRadius: '10px', boxShadow: '0 8px 32px rgba(0,0,0,0.12)',
-          border: '1px solid #E3E7F0', minWidth: '168px', padding: '4px',
+      {open && coords && createPortal(
+        <div ref={menuRef} style={{
+          position: 'fixed', right: coords.right, top: coords.top, bottom: coords.bottom, zIndex: 4000,
+          background: '#fff', borderRadius: '10px', boxShadow: '0 10px 36px rgba(15,22,41,0.16)',
+          border: '1px solid #E3E7F0', minWidth: '184px', padding: '5px',
         }}>
-          {[
-            { icon: <IcPerson size={14} color="#2B5CE6" />, label: 'Подробнее', action: () => { setOpen(false); onDetails(); }, danger: false },
-            { icon: <IcEdit size={14} color="#374151" />, label: 'Редактировать', action: () => { setOpen(false); onEdit(); }, danger: false },
-            { icon: <IcDocument size={14} color="#2B5CE6" />, label: 'Протоколы', action: () => { setOpen(false); onProtocols(); }, danger: false },
-            {
-              icon: user.status === 'active'
-                ? <IcWarning size={14} color="#D97706" />
-                : <IcCheckCircle size={14} color="#059669" />,
-              label: user.status === 'active' ? 'Заблокировать' : 'Разблокировать',
-              action: () => { setOpen(false); onToggleStatus(); },
-              danger: false,
-            },
-            { icon: <IcTrash size={14} color="#DC2626" />, label: 'Удалить', action: () => { setOpen(false); onDelete(); }, danger: true },
-          ].map(item => (
+          {items.map(item => (
             <button
               key={item.label}
-              onClick={item.action}
+              onClick={() => { setOpen(false); item.action(); }}
               style={{
-                width: '100%', textAlign: 'left', padding: '8px 10px', borderRadius: '7px',
+                width: '100%', textAlign: 'left', padding: '9px 11px', borderRadius: '7px',
                 border: 'none', background: 'none', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: '8px',
-                fontSize: '12.5px', color: item.danger ? '#DC2626' : '#374151',
+                display: 'flex', alignItems: 'center', gap: '9px',
+                fontSize: '13px', color: item.danger ? '#DC2626' : '#374151',
                 transition: 'background 0.1s',
               }}
               onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.background = item.danger ? '#FEF2F2' : '#F4F6FB'}
@@ -667,9 +686,10 @@ function RowMenu({ user, onDetails, onEdit, onDelete, onToggleStatus, onProtocol
               {item.label}
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
-    </div>
+    </>
   );
 }
 
@@ -1197,29 +1217,42 @@ function UserProtocolsModal({ user, onClose }: { user: ManagedUser; onClose: () 
 
 // ─── Full user details modal ──────────────────────────────────────────────────
 type DetailStatus = 'passed' | 'failed' | 'in_progress' | 'not_started';
-const DETAIL_STATUS_META: Record<DetailStatus, { label: string; color: string; bg: string }> = {
-  passed:      { label: 'Сдан',      color: '#059669', bg: '#ECFDF5' },
-  failed:      { label: 'Не сдан',   color: '#DC2626', bg: '#FEF2F2' },
-  in_progress: { label: 'В процессе', color: '#D97706', bg: '#FFFBEB' },
-  not_started: { label: 'Не начат',  color: '#6B7280', bg: '#F4F6FB' },
+// Minimalist: brand blue for "passed", neutral greys for everything else.
+const DETAIL_STATUS_META: Record<DetailStatus, { label: string; color: string }> = {
+  passed:      { label: 'Сдан',       color: '#2B5CE6' },
+  failed:      { label: 'Не сдан',    color: '#9CA3AF' },
+  in_progress: { label: 'В процессе', color: '#6B7280' },
+  not_started: { label: 'Не начат',   color: '#B6BECC' },
 };
+function detailStatusIcon(s: DetailStatus) {
+  if (s === 'passed')      return <IcCheckCircle size={15} color="#2B5CE6" />;
+  if (s === 'failed')      return <IcXCircle size={15} color="#9CA3AF" />;
+  if (s === 'in_progress') return <IcClock size={15} color="#6B7280" />;
+  return <IcClock size={15} color="#B6BECC" />;
+}
 
 interface CourseStat {
   id: string; title: string; status: DetailStatus;
-  bestScore: number | null; attempts: number; lastDate: string | null; passingScore: number;
+  bestScore: number | null; attempts: number; lastDate: string | null; passingScore: number; timeSpent: number;
 }
 
-function UserDetailsModal({ user, onClose }: { user: ManagedUser; onClose: () => void }) {
+function UserDetailsModal({ user: initialUser, onClose }: { user: ManagedUser; onClose: () => void }) {
+  const { users, refreshUsers } = useUsers();
   const { courses, getProgress } = useCourses();
+  // Live record from context so "Последний вход" reflects the freshest server pull.
+  const user = users.find(u => u.id === initialUser.id) ?? initialUser;
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState<CourseStat[]>([]);
 
+  // Pull fresh users once on open so the last-login timestamp is current.
+  useEffect(() => { refreshUsers().catch(() => {}); /* eslint-disable-next-line */ }, []);
+
   useEffect(() => {
-    const enrolled = new Set(user.enrolledCourses ?? []);
+    const enrolled = new Set(initialUser.enrolledCourses ?? []);
     const assigned = sortCourses(courses.filter(c => c.published && enrolled.has(c.id)));
     if (assigned.length === 0) { setStats([]); setLoading(false); return; }
     let alive = true;
-    Promise.all(assigned.map(c => getProgress(user.id, c.id).then(p => ({ c, p })).catch(() => ({ c, p: null as any }))))
+    Promise.all(assigned.map(c => getProgress(initialUser.id, c.id).then(p => ({ c, p })).catch(() => ({ c, p: null as any }))))
       .then(rows => {
         if (!alive) return;
         const out: CourseStat[] = rows.map(({ c, p }) => {
@@ -1230,6 +1263,7 @@ function UserDetailsModal({ user, onClose }: { user: ManagedUser; onClose: () =>
           const lastDate = attempts.length
             ? attempts.map(a => a.completedAt).filter(Boolean).sort().slice(-1)[0] ?? null
             : null;
+          const timeSpent = attempts.reduce((sum, a) => sum + (Number(a.timeSpent) || 0), 0);
           let status: DetailStatus = 'not_started';
           if (passedAttempts.length || p?.status === 'completed') status = 'passed';
           else if (attempts.length) status = 'failed';
@@ -1238,7 +1272,7 @@ function UserDetailsModal({ user, onClose }: { user: ManagedUser; onClose: () =>
             id: c.id, title: c.title, status,
             bestScore: best ? Math.round(best.score) : null,
             attempts: attempts.length, lastDate,
-            passingScore: c.test?.passingScore ?? 70,
+            passingScore: c.test?.passingScore ?? 70, timeSpent,
           };
         });
         setStats(out);
@@ -1246,113 +1280,134 @@ function UserDetailsModal({ user, onClose }: { user: ManagedUser; onClose: () =>
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
     // eslint-disable-next-line
-  }, [user.id]);
+  }, [initialUser.id]);
 
   const summary = useMemo(() => {
     const by = (s: DetailStatus) => stats.filter(x => x.status === s).length;
+    const scored = stats.filter(x => x.bestScore !== null);
+    const avg = scored.length ? Math.round(scored.reduce((s, x) => s + (x.bestScore || 0), 0) / scored.length) : null;
+    const lastActivity = stats.map(x => x.lastDate).filter(Boolean).sort().slice(-1)[0] ?? null;
     return {
-      assigned: stats.length,
-      passed: by('passed'), failed: by('failed'),
+      assigned: stats.length, passed: by('passed'), failed: by('failed'),
       inProgress: by('in_progress'), notStarted: by('not_started'),
       totalAttempts: stats.reduce((s, x) => s + x.attempts, 0),
+      totalTime: stats.reduce((s, x) => s + x.timeSpent, 0),
+      avg, lastActivity,
     };
   }, [stats]);
 
-  const rl = ROLE_META[user.role] ?? ROLE_META.student;
-  const sl = STATUS_META[user.status] ?? STATUS_META.active;
-  const fmtDate = (d?: string) => d ? new Date(d).toLocaleDateString('ru-RU') : '—';
-  const fmtDateTime = (d?: string) => d ? new Date(d).toLocaleString('ru-RU', { dateStyle: 'medium', timeStyle: 'short' }) : null;
+  const BLUE = '#2B5CE6', NAVY = '#1B3D84', INK = '#0F1629', GRAY = '#6B7280', FAINT = '#9CA3AF', BORD = '#E8ECF6';
+  const fmtDate = (d?: string | null) => d ? new Date(d).toLocaleDateString('ru-RU') : '—';
+  const fmtDateTime = (d?: string | null) => d ? new Date(d).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : null;
+  const fmtMins = (m: number) => m <= 0 ? '—' : (m >= 60 ? `${Math.floor(m / 60)} ч ${m % 60} мин` : `${m} мин`);
 
-  const infoRows: { label: string; value: string }[] = [
-    { label: 'Логин', value: user.email || '—' },
-    { label: 'Пароль', value: user.password || '—' },
-    { label: 'Телефон', value: user.phone || '—' },
-    { label: 'Организация', value: user.organization || '—' },
-    { label: 'Отдел', value: user.department || '—' },
-    { label: 'Должность', value: user.position || '—' },
-    { label: 'Заявка №', value: user.requestNumber || '—' },
-    { label: 'Зарегистрирован', value: fmtDate(user.createdAt) },
-    { label: 'Последний вход', value: fmtDateTime(user.lastLoginAt) ?? 'ещё не входил' },
+  const isStudent = user.role === 'student';
+  const roleLabel = (ROLE_META[user.role] ?? ROLE_META.student).label;
+
+  const infoRows: { icon: React.ReactNode; label: string; value: string; accent?: boolean }[] = [
+    { icon: <IcMail size={14} color={FAINT} />, label: 'Логин', value: user.email || '—' },
+    { icon: <IcLock size={14} color={FAINT} />, label: 'Пароль', value: user.password || '—' },
+    { icon: <IcPhone size={14} color={FAINT} />, label: 'Телефон', value: user.phone || '—' },
+    { icon: <IcBuilding size={14} color={FAINT} />, label: 'Организация', value: user.organization || '—' },
+    { icon: <IcBriefcase size={14} color={FAINT} />, label: 'Отдел', value: user.department || '—' },
+    { icon: <IcPerson size={14} color={FAINT} />, label: 'Должность', value: user.position || '—' },
+    { icon: <IcDocument size={14} color={FAINT} />, label: 'Заявка №', value: user.requestNumber || '—' },
+    { icon: <IcClock size={14} color={FAINT} />, label: 'Зарегистрирован', value: fmtDate(user.createdAt) },
+    { icon: <IcClock size={14} color={BLUE} />, label: 'Последний вход', value: fmtDateTime(user.lastLoginAt) ?? 'ещё не входил', accent: true },
   ];
 
   const initial = (user.name || '?').trim().charAt(0).toUpperCase();
 
   return (
-    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(15,22,41,0.6)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 640, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.3)' }}>
+    <div onClick={onClose} style={{ position: 'fixed', inset: 0, zIndex: 2000, background: 'rgba(15,22,41,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 16, width: '100%', maxWidth: 640, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 24px 60px rgba(15,22,41,0.22)' }}>
         {/* Header */}
-        <div style={{ padding: '18px 20px', borderBottom: '1px solid #EEF1F8', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <div style={{ padding: '18px 20px', borderBottom: `1px solid ${BORD}`, display: 'flex', alignItems: 'center', gap: 12 }}>
           {user.avatar
             ? <img src={user.avatar} alt="" style={{ width: 46, height: 46, borderRadius: 11, objectFit: 'cover', flexShrink: 0 }} />
-            : <div style={{ width: 46, height: 46, borderRadius: 11, background: '#1B3D84', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 700, flexShrink: 0 }}>{initial}</div>}
+            : <div style={{ width: 46, height: 46, borderRadius: 11, background: NAVY, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, fontWeight: 700, flexShrink: 0 }}>{initial}</div>}
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 16, fontWeight: 700, color: '#0F1629', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.name}</div>
-            <div style={{ fontSize: 12.5, color: '#6B7280', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {[user.position, user.department, user.organization].filter(Boolean).join(' · ') || '—'}
+            <div style={{ fontSize: 16, fontWeight: 700, color: INK, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{user.name}</div>
+            <div style={{ fontSize: 12, color: GRAY, marginTop: 2, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={{ fontWeight: 600, color: BLUE }}>{roleLabel}</span>
+              <span style={{ color: '#D6DCE8' }}>•</span>
+              <span style={{ color: user.status === 'active' ? BLUE : FAINT, fontWeight: 600 }}>
+                {user.status === 'active' ? 'Активен' : 'Заблокирован'}
+              </span>
             </div>
           </div>
-          <span style={{ fontSize: 11, fontWeight: 600, color: rl.color, background: rl.bg, padding: '4px 9px', borderRadius: 7 }}>{rl.label}</span>
-          <span style={{ fontSize: 11, fontWeight: 600, color: sl.color, background: sl.bg, padding: '4px 9px', borderRadius: 7 }}>{sl.label}</span>
-          <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #E3E7F0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <IcClose size={14} color="#6B7280" />
+          <button onClick={() => refreshUsers().catch(() => {})} title="Обновить" style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${BORD}`, background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <IcRefresh size={14} color={GRAY} />
+          </button>
+          <button onClick={onClose} style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${BORD}`, background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            <IcClose size={14} color={GRAY} />
           </button>
         </div>
 
-        <div style={{ padding: 18, overflowY: 'auto' }}>
+        <div style={{ padding: 20, overflowY: 'auto' }}>
           {/* Profile grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '10px 18px', marginBottom: 18 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: '14px 20px', marginBottom: 20 }}>
             {infoRows.map(r => (
-              <div key={r.label}>
-                <div style={{ fontSize: 10.5, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>{r.label}</div>
-                <div style={{ fontSize: 13.5, color: '#0F1629', fontWeight: 500, wordBreak: 'break-word' }}>{r.value}</div>
+              <div key={r.label} style={{ display: 'flex', gap: 9, minWidth: 0 }}>
+                <div style={{ marginTop: 2, flexShrink: 0 }}>{r.icon}</div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 10, color: FAINT, textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 600 }}>{r.label}</div>
+                  <div style={{ fontSize: 13.5, color: r.accent ? BLUE : INK, fontWeight: r.accent ? 700 : 500, wordBreak: 'break-word' }}>{r.value}</div>
+                </div>
               </div>
             ))}
           </div>
 
-          {/* Summary strip */}
-          {user.role === 'student' && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+          {/* Summary — monochrome, brand-blue numbers */}
+          {isStudent && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', border: `1px solid ${BORD}`, borderRadius: 12, overflow: 'hidden', marginBottom: 20 }}>
               {[
-                { label: 'Назначено', value: summary.assigned, color: '#2B5CE6', bg: '#EBF1FE' },
-                { label: 'Сдано', value: summary.passed, color: '#059669', bg: '#ECFDF5' },
-                { label: 'Не сдано', value: summary.failed, color: '#DC2626', bg: '#FEF2F2' },
-                { label: 'В процессе', value: summary.inProgress, color: '#D97706', bg: '#FFFBEB' },
-                { label: 'Не начато', value: summary.notStarted, color: '#6B7280', bg: '#F4F6FB' },
-                { label: 'Всего попыток', value: summary.totalAttempts, color: '#0F1629', bg: '#F4F6FB' },
-              ].map(s => (
-                <div key={s.label} style={{ flex: '1 1 90px', padding: '9px 12px', borderRadius: 10, background: s.bg, textAlign: 'center' }}>
-                  <div style={{ fontSize: 19, fontWeight: 800, color: s.color, lineHeight: 1 }}>{s.value}</div>
-                  <div style={{ fontSize: 10.5, color: s.color, marginTop: 3, fontWeight: 600 }}>{s.label}</div>
+                { label: 'Назначено', value: summary.assigned },
+                { label: 'Сдано', value: summary.passed },
+                { label: 'В процессе', value: summary.inProgress },
+                { label: 'Не начато', value: summary.notStarted },
+                { label: 'Попыток', value: summary.totalAttempts },
+                { label: 'Средний балл', value: summary.avg !== null ? `${summary.avg}%` : '—' },
+                { label: 'Время', value: fmtMins(summary.totalTime) },
+              ].map((s, i) => (
+                <div key={s.label} style={{ flex: '1 1 84px', padding: '12px 8px', textAlign: 'center', borderLeft: i ? `1px solid ${BORD}` : 'none' }}>
+                  <div style={{ fontSize: 19, fontWeight: 800, color: NAVY, lineHeight: 1 }}>{s.value}</div>
+                  <div style={{ fontSize: 10, color: GRAY, marginTop: 4, fontWeight: 600 }}>{s.label}</div>
                 </div>
               ))}
             </div>
           )}
 
           {/* Per-course breakdown */}
-          {user.role === 'student' && (
+          {isStudent && (
             <>
-              <div style={{ fontSize: 11.5, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 8 }}>
-                Курсы и результаты
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 10 }}>
+                <IcBook size={14} color={GRAY} />
+                <span style={{ fontSize: 11.5, fontWeight: 700, color: GRAY, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Курсы и результаты</span>
               </div>
               {loading ? (
-                <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Загрузка статистики…</div>
+                <div style={{ padding: 24, textAlign: 'center', color: FAINT, fontSize: 13 }}>Загрузка статистики…</div>
               ) : stats.length === 0 ? (
-                <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Пользователю не назначены курсы.</div>
+                <div style={{ padding: 24, textAlign: 'center', color: FAINT, fontSize: 13 }}>Пользователю не назначены курсы.</div>
               ) : (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
                   {stats.map(s => {
                     const m = DETAIL_STATUS_META[s.status];
                     return (
-                      <div key={s.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '11px 13px', borderRadius: 10, border: '1px solid #E8ECF6' }}>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 13.5, fontWeight: 600, color: '#0F1629', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.title}</div>
-                          <div style={{ fontSize: 11.5, color: '#6B7280', marginTop: 2 }}>
-                            {s.bestScore !== null ? `Лучший балл: ${s.bestScore}% (порог ${s.passingScore}%)` : `Порог ${s.passingScore}%`}
-                            {' · '}Попыток: {s.attempts}
-                            {s.lastDate ? ` · Последняя: ${fmtDate(s.lastDate)}` : ''}
-                          </div>
+                      <div key={s.id} style={{ padding: '12px 14px', borderRadius: 11, border: `1px solid ${BORD}` }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <span style={{ flexShrink: 0, display: 'flex' }}>{detailStatusIcon(s.status)}</span>
+                          <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 600, color: INK, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.title}</span>
+                          <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 700, color: m.color }}>{m.label}</span>
                         </div>
-                        <span style={{ flexShrink: 0, fontSize: 11.5, fontWeight: 700, color: m.color, background: m.bg, padding: '5px 10px', borderRadius: 8 }}>{m.label}</span>
+                        <div style={{ fontSize: 11.5, color: GRAY, margin: '7px 0 8px' }}>
+                          {s.bestScore !== null ? `Лучший: ${s.bestScore}% · ` : ''}Порог: {s.passingScore}% · Попыток: {s.attempts}
+                          {s.timeSpent ? ` · ${fmtMins(s.timeSpent)}` : ''}
+                          {s.lastDate ? ` · ${fmtDate(s.lastDate)}` : ''}
+                        </div>
+                        <div style={{ height: 5, borderRadius: 3, background: '#EEF1F8', overflow: 'hidden' }}>
+                          <div style={{ height: '100%', width: `${Math.min(100, s.bestScore ?? 0)}%`, background: s.status === 'passed' ? BLUE : '#C7D2E8', borderRadius: 3 }} />
+                        </div>
                       </div>
                     );
                   })}
