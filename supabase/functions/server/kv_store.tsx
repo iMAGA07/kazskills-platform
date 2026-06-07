@@ -77,13 +77,28 @@ export const mdel = async (keys: string[]): Promise<void> => {
 };
 
 // Search for key-value pairs by prefix.
+// PostgREST caps a single response at 1000 rows, so page through with range()
+// — otherwise prefixes with >1000 keys (e.g. >1000 users) are silently truncated,
+// which makes accounts past the 1000th invisible and unable to log in.
 export const getByPrefix = async (prefix: string): Promise<any[]> => {
   const supabase = client()
-  const { data, error } = await supabase.from("kv_store_3ed1835c").select("key, value").like("key", prefix + "%");
-  if (error) {
-    throw new Error(error.message);
+  const PAGE = 1000;
+  const out: any[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabase
+      .from("kv_store_3ed1835c")
+      .select("key, value")
+      .like("key", prefix + "%")
+      .order("key")
+      .range(from, from + PAGE - 1);
+    if (error) {
+      throw new Error(error.message);
+    }
+    if (!data || data.length === 0) break;
+    for (const d of data) out.push(d.value);
+    if (data.length < PAGE) break;
   }
-  return data?.map((d) => d.value) ?? [];
+  return out;
 };
 
 // Search and return raw {key, value} pairs by prefix.
