@@ -2124,6 +2124,7 @@ function RequestEditView({
   const [toDelete, setToDelete] = useState<Set<string>>(new Set());
   const [saved, setSaved] = useState(false);
   const [memberSearch, setMemberSearch] = useState('');
+  const [sortMode, setSortMode] = useState<'name' | 'recent'>('name');
 
   // Inline edit of the заявка number
   const [editNum, setEditNum] = useState(false);
@@ -2217,6 +2218,25 @@ function RequestEditView({
     background: '#fff', fontSize: 12.5, outline: 'none', boxSizing: 'border-box',
   };
 
+  // Members to render: filtered by the ФИО/логин search, then sorted by the
+  // chosen mode. handleSave still operates on `members`, so display order is safe.
+  const displayMembers = (() => {
+    const mq = memberSearch.trim().toLowerCase();
+    const list = mq
+      ? members.filter(m => m.name.toLowerCase().includes(mq) || (m.email ?? '').toLowerCase().includes(mq))
+      : members.slice();
+    if (sortMode === 'name') {
+      list.sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    } else {
+      // 'recent' — most recently added first (newer createdAt, then later in the list).
+      list.sort((a, b) => {
+        const d = (b.createdAt ?? '').localeCompare(a.createdAt ?? '');
+        return d !== 0 ? d : members.indexOf(b) - members.indexOf(a);
+      });
+    }
+    return list;
+  })();
+
   return (
     <div style={{
       position: 'fixed', inset: 0, background: 'rgba(15,22,41,0.5)', zIndex: 1001,
@@ -2304,20 +2324,33 @@ function RequestEditView({
                   Сотрудники в заявке ({members.length - toDelete.size})
                 </div>
                 {members.length > 6 && (
-                  <input
-                    value={memberSearch}
-                    onChange={e => setMemberSearch(e.target.value)}
-                    placeholder="Поиск сотрудника по ФИО или логину…"
-                    style={{
-                      width: '100%', padding: '8px 11px', borderRadius: 8, marginBottom: 10,
-                      border: `1.5px solid ${BORDER}`, background: '#F8FAFD',
-                      fontSize: 13, color: '#0F1629', outline: 'none', boxSizing: 'border-box',
-                    }}
-                  />
+                  <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                    <input
+                      value={memberSearch}
+                      onChange={e => setMemberSearch(e.target.value)}
+                      placeholder="Поиск сотрудника по ФИО или логину…"
+                      style={{
+                        flex: '1 1 200px', padding: '8px 11px', borderRadius: 8,
+                        border: `1.5px solid ${BORDER}`, background: '#F8FAFD',
+                        fontSize: 13, color: '#0F1629', outline: 'none', boxSizing: 'border-box',
+                      }}
+                    />
+                    <div style={{ display: 'flex', border: `1.5px solid ${BORDER}`, borderRadius: 8, overflow: 'hidden', flexShrink: 0 }}>
+                      {([['name', 'А→Я'], ['recent', 'Последние']] as const).map(([mode, label], i) => (
+                        <button key={mode} type="button" onClick={() => setSortMode(mode)}
+                          title={mode === 'name' ? 'По алфавиту' : 'Последние добавленные'}
+                          style={{
+                            padding: '8px 12px', border: 'none', cursor: 'pointer', fontSize: 12.5,
+                            borderLeft: i ? `1.5px solid ${BORDER}` : 'none',
+                            fontWeight: sortMode === mode ? 700 : 500,
+                            background: sortMode === mode ? '#EBF1FE' : '#fff',
+                            color: sortMode === mode ? BLUE : '#6B7280',
+                          }}>{label}</button>
+                      ))}
+                    </div>
+                  </div>
                 )}
-                {members.map((m, idx) => {
-                  const mq = memberSearch.trim().toLowerCase();
-                  if (mq && !(m.name.toLowerCase().includes(mq) || (m.email ?? '').toLowerCase().includes(mq))) return null;
+                {displayMembers.map((m, idx) => {
                   const willDelete = toDelete.has(m.id);
                   return (
                     <div key={m.id} style={{
@@ -2375,12 +2408,9 @@ function RequestEditView({
                     </div>
                   );
                 })}
-                {(() => {
-                  const mq = memberSearch.trim().toLowerCase();
-                  return mq && !members.some(m => m.name.toLowerCase().includes(mq) || (m.email ?? '').toLowerCase().includes(mq))
-                    ? <div style={{ fontSize: 12.5, color: '#9CA3AF', padding: '6px 2px' }}>Никого не найдено по «{memberSearch}».</div>
-                    : null;
-                })()}
+                {memberSearch.trim() && displayMembers.length === 0 && (
+                  <div style={{ fontSize: 12.5, color: '#9CA3AF', padding: '6px 2px' }}>Никого не найдено по «{memberSearch}».</div>
+                )}
               </div>
 
               {/* New rows */}
