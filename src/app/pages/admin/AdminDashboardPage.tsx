@@ -1879,12 +1879,17 @@ function RequestArchiveModal({ open, onClose }: { open: boolean; onClose: () => 
     setConfirmDel(null);
   };
 
+  const q = search.trim().toLowerCase();
+  // Members (ФИО / логин) matching the query — used both to surface the заявка
+  // and to show WHO matched on its card.
+  const memberHits = (r: RequestSummary) =>
+    q ? r.members.filter(m => m.name.toLowerCase().includes(q) || (m.email ?? '').toLowerCase().includes(q)) : [];
   const filtered = requests.filter(r => {
-    const q = search.trim().toLowerCase();
     if (!q) return true;
     return r.requestNumber.toLowerCase().includes(q)
       || r.organization.toLowerCase().includes(q)
-      || r.department.toLowerCase().includes(q);
+      || r.department.toLowerCase().includes(q)
+      || memberHits(r).length > 0;
   });
 
   if (!open) return null;
@@ -1948,7 +1953,7 @@ function RequestArchiveModal({ open, onClose }: { open: boolean; onClose: () => 
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            placeholder="Поиск по номеру заявки, организации, отделу…"
+            placeholder="Поиск по ФИО, логину, номеру заявки, организации…"
             style={{
               width: '100%', padding: '9px 12px', borderRadius: 8,
               border: `1.5px solid ${BORDER}`, background: '#F8FAFD',
@@ -1993,6 +1998,12 @@ function RequestArchiveModal({ open, onClose }: { open: boolean; onClose: () => 
                       <span>·</span>
                       <span>{req.members.length} {req.members.length === 1 ? 'сотрудник' : req.members.length < 5 ? 'сотрудника' : 'сотрудников'}</span>
                     </div>
+                    {memberHits(req).length > 0 && (
+                      <div style={{ fontSize: 11.5, color: BLUE, marginTop: 4, fontWeight: 500 }}>
+                        Найден: {memberHits(req).slice(0, 3).map(m => m.name).join(', ')}
+                        {memberHits(req).length > 3 ? ` и ещё ${memberHits(req).length - 3}` : ''}
+                      </div>
+                    )}
                   </div>
                   <button
                     onClick={() => exportBatchCredentials(
@@ -2112,6 +2123,7 @@ function RequestEditView({
   const [newRows, setNewRows] = useState<EmployeeRow[]>([]);
   const [toDelete, setToDelete] = useState<Set<string>>(new Set());
   const [saved, setSaved] = useState(false);
+  const [memberSearch, setMemberSearch] = useState('');
 
   // Inline edit of the заявка number
   const [editNum, setEditNum] = useState(false);
@@ -2291,7 +2303,21 @@ function RequestEditView({
                 <div style={{ fontSize: 12, fontWeight: 700, color: '#9CA3AF', textTransform: 'uppercase', letterSpacing: '0.07em', marginBottom: 10 }}>
                   Сотрудники в заявке ({members.length - toDelete.size})
                 </div>
+                {members.length > 6 && (
+                  <input
+                    value={memberSearch}
+                    onChange={e => setMemberSearch(e.target.value)}
+                    placeholder="Поиск сотрудника по ФИО или логину…"
+                    style={{
+                      width: '100%', padding: '8px 11px', borderRadius: 8, marginBottom: 10,
+                      border: `1.5px solid ${BORDER}`, background: '#F8FAFD',
+                      fontSize: 13, color: '#0F1629', outline: 'none', boxSizing: 'border-box',
+                    }}
+                  />
+                )}
                 {members.map((m, idx) => {
+                  const mq = memberSearch.trim().toLowerCase();
+                  if (mq && !(m.name.toLowerCase().includes(mq) || (m.email ?? '').toLowerCase().includes(mq))) return null;
                   const willDelete = toDelete.has(m.id);
                   return (
                     <div key={m.id} style={{
@@ -2349,6 +2375,12 @@ function RequestEditView({
                     </div>
                   );
                 })}
+                {(() => {
+                  const mq = memberSearch.trim().toLowerCase();
+                  return mq && !members.some(m => m.name.toLowerCase().includes(mq) || (m.email ?? '').toLowerCase().includes(mq))
+                    ? <div style={{ fontSize: 12.5, color: '#9CA3AF', padding: '6px 2px' }}>Никого не найдено по «{memberSearch}».</div>
+                    : null;
+                })()}
               </div>
 
               {/* New rows */}
