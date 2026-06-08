@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useMemo, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useMemo, useState, useEffect, useCallback, useRef } from 'react';
 // authHeaders attaches both the Supabase anon key and our x-session-token (if present).
 import type { User, UserRole } from './AuthContext';
 import { userBelongsToCurrentTenant, getOrganizationSlug } from '../lib/organization';
@@ -39,22 +39,26 @@ async function syncBatchChunk(users: ManagedUser[], attempt = 0): Promise<void> 
   }
 }
 
-// Background sync to server; failures surface as a single throttled toast (UI stays responsive).
-async function bgFetch(path: string, init?: RequestInit) {
+// Background sync to server; returns true only when the server confirmed the write
+// (2xx). Failures surface as a single throttled toast (UI stays responsive).
+async function bgFetch(path: string, init?: RequestInit): Promise<boolean> {
   try {
     const res = await fetch(`${BASE}${path}`, { ...init, headers: { ...authHeaders(), ...(init?.headers ?? {}) } });
     if (res.status === 401) {
       window.dispatchEvent(new Event('session-expired'));
-      return;
+      return false;
     }
     if (!res.ok) {
       const body = await res.text();
       console.warn(`User sync ${path} failed:`, body);
       toast.error('Не удалось сохранить изменения на сервере. Локально сохранено — повторите позже.');
+      return false;
     }
+    return true;
   } catch (e) {
     console.warn(`User sync ${path} error:`, e);
     toast.error('Нет связи с сервером. Изменения сохранены локально.');
+    return false;
   }
 }
 
@@ -308,6 +312,11 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
     }
   });
 
+  // Ids whose server PUT hasn't been confirmed yet. syncFromServer must NOT
+  // overwrite these with the (stale) server copy, or a just-saved edit (e.g. a
+  // course-checkbox change) silently reverts to the old / all-courses baseline.
+  const pendingWrites = useRef<Set<string>>(new Set());
+
   const syncFromServer = useCallback(async () => {
     // Always try to ensure the server is seeded — it's idempotent (no-op if not empty).
     fetch(`${BASE}/users/seed`, {
@@ -328,8 +337,16 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
       if (!res.ok) return;
       const data: ManagedUser[] = await res.json();
       if (Array.isArray(data) && data.length > 0) {
-        setAllUsers(data);
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        // Merge, don't clobber: keep the local copy of any record whose write is
+        // still pending/unconfirmed so an in-flight or failed PUT isn't reverted.
+        setAllUsers(prev => {
+          const localById = new Map(prev.map(u => [u.id, u]));
+          const merged = data.map(srv =>
+            pendingWrites.current.has(srv.id) ? (localById.get(srv.id) ?? srv) : srv
+          );
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
+          return merged;
+        });
       }
     } catch (e) {
       console.warn('User sync failed, using local cache:', e);
@@ -383,7 +400,22 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
       });
       return next;
     });
-    if (updated) bgFetch(`/users/${id}`, { method: 'PUT', body: JSON.stringify(updated) });
+    if (!updated) return;
+    // Protect the optimistic edit from being clobbered by a concurrent server
+    // pull until the write is confirmed; persist with a few retries.
+    pendingWrites.current.add(id);
+    const body = JSON.stringify(updated);
+    (async () => {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        if (await bgFetch(`/users/${id}`, { method: 'PUT', body })) {
+          pendingWrites.current.delete(id);
+          return;
+        }
+        await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
+      }
+      // Still unconfirmed after retries — leave it marked dirty so the next
+      // server pull preserves the local edit rather than reverting it.
+    })();
   }, []);
 
   const addUsersBatch = useCallback((

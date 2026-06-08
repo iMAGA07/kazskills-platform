@@ -1895,6 +1895,7 @@ function RequestArchiveModal({ open, onClose }: { open: boolean; onClose: () => 
     if (!req) return null;   // the cleanup effect above will reset editingReq
     return (
       <RequestEditView
+        key={req.requestNumber}
         request={req}
         publishedCourses={publishedCourses}
         existingNumbers={requests.map(r => r.requestNumber).filter(n => n !== req.requestNumber)}
@@ -1973,17 +1974,19 @@ function RequestArchiveModal({ open, onClose }: { open: boolean; onClose: () => 
                   border: `1.5px solid ${BORDER}`, background: '#fff',
                 }}>
                   <div style={{
-                    width: 44, height: 44, borderRadius: 9, background: '#F4F6FB',
+                    minWidth: 40, height: 40, padding: '0 10px', borderRadius: 9, background: '#F4F6FB',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     fontSize: 13, fontWeight: 700, color: NAVY, flexShrink: 0,
                   }}>
-                    №{req.requestNumber}
+                    №
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: '#0F1629', marginBottom: 2 }}>
-                      {req.organization}
+                    <div style={{ fontSize: 14.5, fontWeight: 700, color: NAVY, marginBottom: 3, wordBreak: 'break-word', lineHeight: 1.3 }}>
+                      №{req.requestNumber}
                     </div>
-                    <div style={{ fontSize: 12, color: MUTED, display: 'flex', gap: 12 }}>
+                    <div style={{ fontSize: 12, color: MUTED, display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <span style={{ fontWeight: 600, color: '#374151' }}>{req.organization}</span>
+                      <span>·</span>
                       <span>{req.department || '— без отдела —'}</span>
                       <span>·</span>
                       <span>{req.createdAt}</span>
@@ -2178,7 +2181,9 @@ function RequestEditView({
       if (m.position !== orig.position) changed.position = m.position;
       if (m.email !== orig.email) changed.email = m.email;
       if (m.password !== orig.password) changed.password = m.password;
-      if (JSON.stringify(m.enrolledCourses) !== JSON.stringify(orig.enrolledCourses)) changed.enrolledCourses = m.enrolledCourses;
+      const sameCourses = m.enrolledCourses.length === orig.enrolledCourses.length
+        && [...m.enrolledCourses].sort().join('|') === [...orig.enrolledCourses].sort().join('|');
+      if (!sameCourses) changed.enrolledCourses = m.enrolledCourses;
       if (Object.keys(changed).length > 0) onUpdateUser(m.id, changed);
     });
     // Delete marked
@@ -2240,8 +2245,8 @@ function RequestEditView({
                 {numErr && <span style={{ fontSize: 11.5, color: '#DC2626', width: '100%' }}>{numErr}</span>}
               </div>
             ) : (
-              <h2 style={{ margin: 0, fontSize: 16, color: '#0F1629', display: 'flex', alignItems: 'center', gap: 8 }}>
-                Заявка №{request.requestNumber}
+              <h2 style={{ margin: 0, fontSize: 16, color: '#0F1629', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={{ wordBreak: 'break-word' }}>Заявка №{request.requestNumber}</span>
                 <button
                   onClick={() => { setNumDraft(request.requestNumber); setEditNum(true); setNumErr(''); }}
                   title="Изменить номер заявки"
