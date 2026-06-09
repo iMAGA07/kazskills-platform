@@ -22,20 +22,22 @@ function authHeaders(): Record<string, string> {
 // Post one batch chunk with retries — a transient network failure must not silently
 // drop those users (they'd exist only in localStorage and vanish on the next
 // server pull). Retries up to 3 times with backoff before surfacing an error.
-async function syncBatchChunk(users: ManagedUser[], attempt = 0): Promise<void> {
+async function syncBatchChunk(users: ManagedUser[], attempt = 0): Promise<boolean> {
   try {
     const res = await fetch(`${BASE}/users/batch`, {
       method: 'POST', headers: authHeaders(), body: JSON.stringify(users),
     });
-    if (res.status === 401) { window.dispatchEvent(new Event('session-expired')); return; }
+    if (res.status === 401) { window.dispatchEvent(new Event('session-expired')); return false; }
     if (!res.ok) throw new Error(await res.text());
+    return true;
   } catch (e) {
-    if (attempt < 2) {
-      setTimeout(() => { syncBatchChunk(users, attempt + 1); }, 800 * (attempt + 1));
-      return;
+    if (attempt < 3) {
+      await new Promise(r => setTimeout(r, 800 * (attempt + 1)));
+      return syncBatchChunk(users, attempt + 1);
     }
     console.warn('Batch chunk failed after retries:', e);
     toast.error('Не все пользователи сохранились на сервере (нет связи). Они сохранены локально — при восстановлении связи откройте заявку и нажмите «Сохранить».');
+    return false;
   }
 }
 
@@ -317,10 +319,14 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
   const allUsersRef = useRef(allUsers);
   allUsersRef.current = allUsers;
 
-  // Ids whose server PUT hasn't been confirmed yet. syncFromServer must NOT
-  // overwrite these with the (stale) server copy, or a just-saved edit (e.g. a
-  // course-checkbox change) silently reverts to the old / all-courses baseline.
+  // Ids whose server write (create/update) hasn't been confirmed yet. syncFromServer
+  // must NOT drop/overwrite these with the (stale or absent) server copy, or a
+  // just-added user / just-saved edit reverts on the next pull (people "fly off"
+  // заявки and the count jumps). Cleared once the server confirms (2xx).
   const pendingWrites = useRef<Set<string>>(new Set());
+  // Ids the admin deleted locally whose DELETE hasn't been confirmed — keep them
+  // gone in the merge so a pull doesn't resurrect them. Cleared on confirmed delete.
+  const pendingDeletes = useRef<Set<string>>(new Set());
 
   const syncFromServer = useCallback(async () => {
     // Always try to ensure the server is seeded — it's idempotent (no-op if not empty).
@@ -342,13 +348,25 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
       if (!res.ok) return;
       const data: ManagedUser[] = await res.json();
       if (Array.isArray(data) && data.length > 0) {
-        // Merge, don't clobber: keep the local copy of any record whose write is
-        // still pending/unconfirmed so an in-flight or failed PUT isn't reverted.
+        // Merge, don't clobber. The server list is authoritative EXCEPT for
+        // operations the client hasn't had confirmed yet:
+        //  • pendingWrites  → keep the local copy (edit/add not yet acked)
+        //  • pendingDeletes → drop it (delete not yet acked) so it doesn't return
+        //  • pending local-only adds → re-append (not on the server yet)
         setAllUsers(prev => {
           const localById = new Map(prev.map(u => [u.id, u]));
-          const merged = data.map(srv =>
-            pendingWrites.current.has(srv.id) ? (localById.get(srv.id) ?? srv) : srv
-          );
+          const seen = new Set<string>();
+          const merged: ManagedUser[] = [];
+          for (const srv of data) {
+            if (pendingDeletes.current.has(srv.id)) continue;
+            seen.add(srv.id);
+            merged.push(pendingWrites.current.has(srv.id) ? (localById.get(srv.id) ?? srv) : srv);
+          }
+          for (const u of prev) {
+            if (!seen.has(u.id) && pendingWrites.current.has(u.id) && !pendingDeletes.current.has(u.id)) {
+              merged.push(u);
+            }
+          }
           localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
           return merged;
         });
@@ -392,7 +410,16 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
       completedCourses: [],
     };
     persistFn(prev => [...prev, newUser]);
-    bgFetch('/users', { method: 'POST', body: JSON.stringify(newUser) });
+    pendingWrites.current.add(newUser.id);
+    (async () => {
+      for (let attempt = 0; attempt < 4; attempt++) {
+        if (await bgFetch('/users', { method: 'POST', body: JSON.stringify(newUser) })) {
+          pendingWrites.current.delete(newUser.id);
+          return;
+        }
+        await new Promise(r => setTimeout(r, 700 * (attempt + 1)));
+      }
+    })();
   }, []);
 
   const updateUser = useCallback((id: string, updates: Partial<ManagedUser>) => {
@@ -444,18 +471,31 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
       requestNumber,
     }));
     persistFn(prev => [...prev, ...newUsers]);
-    // Sync to the server in chunks — a single huge POST (e.g. 400 users) can exceed
-    // payload limits or time out, which previously left the server copy missing.
+    // Protect the new users from being dropped by a concurrent server pull until
+    // their chunk is confirmed. Sync in chunks — a single huge POST (e.g. 400 users)
+    // can exceed payload limits or time out, which previously left them missing.
+    newUsers.forEach(u => pendingWrites.current.add(u.id));
     const CHUNK = 50;
     for (let i = 0; i < newUsers.length; i += CHUNK) {
-      syncBatchChunk(newUsers.slice(i, i + CHUNK));
+      const chunk = newUsers.slice(i, i + CHUNK);
+      syncBatchChunk(chunk).then(ok => { if (ok) chunk.forEach(u => pendingWrites.current.delete(u.id)); });
     }
     return newUsers;
   }, []);
 
   const deleteUser = useCallback((id: string) => {
     persistFn(prev => prev.filter(u => u.id !== id));
-    bgFetch(`/users/${id}`, { method: 'DELETE' });
+    // Keep it gone across pulls until the server confirms the delete.
+    pendingDeletes.current.add(id);
+    (async () => {
+      for (let attempt = 0; attempt < 4; attempt++) {
+        if (await bgFetch(`/users/${id}`, { method: 'DELETE' })) {
+          pendingDeletes.current.delete(id);
+          return;
+        }
+        await new Promise(r => setTimeout(r, 700 * (attempt + 1)));
+      }
+    })();
   }, []);
 
   const toggleStatus = useCallback((id: string) => {
