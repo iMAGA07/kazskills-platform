@@ -167,7 +167,8 @@ async function generateLoginsPasswords(
   requestNum?: string,
 ) {
   const students = users.filter(u => u.role === 'student' && u.organization === org
-    && (!requestNum || u.requestNumber === requestNum));
+    && (!requestNum || u.requestNumber === requestNum))
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'));
   const published = courses.filter(c => c.published);
   const titleById = new Map(published.map(c => [c.id, c.title]));
 
@@ -329,7 +330,8 @@ const RPT_TD = `border:1px solid #c9d2e3;padding:7px 6px;font-size:12.5px;vertic
 async function generateLoginsPasswordsPdf(
   org: string, users: ManagedUser[], courses: ReturnType<typeof useCourses>['courses'], requestNum?: string,
 ) {
-  const students = users.filter(u => u.role === 'student' && u.organization === org && (!requestNum || u.requestNumber === requestNum));
+  const students = users.filter(u => u.role === 'student' && u.organization === org && (!requestNum || u.requestNumber === requestNum))
+    .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'));
   const titleById = new Map(courses.filter(c => c.published).map(c => [c.id, c.title]));
   const url = reportSiteUrl(org);
 
@@ -443,9 +445,10 @@ async function generateZayavkaPdf(
 async function exportBatchCredentials(
   requestNumber: string,
   org: string,
-  createdUsers: { name: string; login: string; password: string }[],
+  createdUsersInput: { name: string; login: string; password: string }[],
   tenantSlug?: string | null,
 ) {
+  const createdUsers = [...createdUsersInput].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'));
   const siteUrl = tenantSlug
     ? `https://${tenantSlug}.kazskills.kz`
     : 'https://kazskills.kz';
@@ -538,9 +541,10 @@ async function exportBatchCredentials(
 async function exportBatchCredentialsPdf(
   requestNumber: string,
   org: string,
-  createdUsers: { name: string; login: string; password: string }[],
+  createdUsersInput: { name: string; login: string; password: string }[],
   tenantSlug?: string | null,
 ) {
+  const createdUsers = [...createdUsersInput].sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ru'));
   const siteUrl = tenantSlug ? `https://${tenantSlug}.kazskills.kz` : 'https://kazskills.kz';
 
   const rows = createdUsers.map((u, i) => `<tr>
