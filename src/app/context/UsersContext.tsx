@@ -454,22 +454,33 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
     requestNumber: string,
   ): ManagedUser[] => {
     const now = new Date().toISOString().slice(0, 10);
-    const newUsers: ManagedUser[] = batch.map((b, i) => ({
-      id: `batch-${Date.now()}-${i}`,
-      email: b.login,
-      password: b.password,
-      name: b.name,
-      role: 'student' as const,
-      organization: org,
-      department,
-      position: b.position,
-      phone: '',
-      enrolledCourses: b.enrolledCourses,
-      completedCourses: [],
-      createdAt: now,
-      status: 'active' as const,
-      requestNumber,
-    }));
+    // Guarantee unique logins: the random 6-digit generator in the UI can collide
+    // with an existing user (that broke a person's login). Re-roll any login that
+    // clashes with an existing user OR another login in this same batch.
+    const taken = new Set(allUsersRef.current.map(u => u.email));
+    const newUsers: ManagedUser[] = batch.map((b, i) => {
+      let login = (b.login || '').trim();
+      while (!/^\d{6}$/.test(login) || taken.has(login)) {
+        login = String(Math.floor(100000 + Math.random() * 900000));
+      }
+      taken.add(login);
+      return {
+        id: `batch-${Date.now()}-${i}`,
+        email: login,
+        password: b.password,
+        name: b.name,
+        role: 'student' as const,
+        organization: org,
+        department,
+        position: b.position,
+        phone: '',
+        enrolledCourses: b.enrolledCourses,
+        completedCourses: [],
+        createdAt: now,
+        status: 'active' as const,
+        requestNumber,
+      };
+    });
     persistFn(prev => [...prev, ...newUsers]);
     // Protect the new users from being dropped by a concurrent server pull until
     // their chunk is confirmed. Sync in chunks — a single huge POST (e.g. 400 users)

@@ -913,6 +913,18 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
   const nextStep = () => {
     if (step === 1 && !validateStep1()) return;
     if (step === 2 && !validateStep2()) return;
+    if (step === 3) {
+      // Before review/export: make every generated login unique vs existing users
+      // AND within this batch, so the shown & exported logins match what gets saved
+      // (prevents the random generator colliding with an existing login).
+      const taken = new Set(users.map(u => u.email));
+      setEmployees(prev => prev.map(e => {
+        let login = e.login;
+        while (!/^\d{6}$/.test(login) || taken.has(login)) login = genLogin6();
+        taken.add(login);
+        return login === e.login ? e : { ...e, login };
+      }));
+    }
     setErrors({});
     setStep(s => Math.min(s + 1, 4));
   };
