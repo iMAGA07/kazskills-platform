@@ -312,6 +312,11 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
     }
   });
 
+  // Always-current mirror of allUsers, so mutations can read the latest record
+  // synchronously without reading a value assigned inside a setState updater.
+  const allUsersRef = useRef(allUsers);
+  allUsersRef.current = allUsers;
+
   // Ids whose server PUT hasn't been confirmed yet. syncFromServer must NOT
   // overwrite these with the (stale) server copy, or a just-saved edit (e.g. a
   // course-checkbox change) silently reverts to the old / all-courses baseline.
@@ -391,27 +396,24 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const updateUser = useCallback((id: string, updates: Partial<ManagedUser>) => {
-    let updated: ManagedUser | undefined;
-    persistFn(prev => {
-      const next = prev.map(u => {
-        if (u.id !== id) return u;
-        updated = { ...u, ...updates };
-        return updated;
-      });
-      return next;
-    });
-    if (!updated) return;
-    // Protect the optimistic edit from being clobbered by a concurrent server
-    // pull until the write is confirmed; persist with a few retries.
+    // Optimistic local update (functional form, so a synchronous loop of edits —
+    // e.g. saving every member of a заявка — all accumulate correctly).
+    persistFn(prev => prev.map(u => u.id === id ? { ...u, ...updates } : u));
+    // CRITICAL: fire the PUT UNCONDITIONALLY. Never gate it on a value assigned
+    // inside the setState updater — React's eager-state bailout runs that updater
+    // synchronously only for the FIRST dispatch in a tick, so in a loop calls 2..N
+    // would read `undefined` and silently skip the write (the bug that made bulk
+    // course/заявка edits revert). We send ONLY the changed fields; the server
+    // merges them into the existing record, so a partial body is complete & correct.
     pendingWrites.current.add(id);
-    const body = JSON.stringify(updated);
+    const body = JSON.stringify({ ...updates, id });
     (async () => {
-      for (let attempt = 0; attempt < 3; attempt++) {
+      for (let attempt = 0; attempt < 4; attempt++) {
         if (await bgFetch(`/users/${id}`, { method: 'PUT', body })) {
           pendingWrites.current.delete(id);
           return;
         }
-        await new Promise(r => setTimeout(r, 600 * (attempt + 1)));
+        await new Promise(r => setTimeout(r, 700 * (attempt + 1)));
       }
       // Still unconfirmed after retries — leave it marked dirty so the next
       // server pull preserves the local edit rather than reverting it.
@@ -457,13 +459,20 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const toggleStatus = useCallback((id: string) => {
-    let newStatus: 'active' | 'blocked' | undefined;
-    persistFn(prev => prev.map(u => {
-      if (u.id !== id) return u;
-      newStatus = u.status === 'active' ? 'blocked' : 'active';
-      return { ...u, status: newStatus };
-    }));
-    if (newStatus) bgFetch(`/users/${id}`, { method: 'PUT', body: JSON.stringify({ status: newStatus }) });
+    const cur = allUsersRef.current.find(u => u.id === id);
+    if (!cur) return;
+    const newStatus: 'active' | 'blocked' = cur.status === 'active' ? 'blocked' : 'active';
+    persistFn(prev => prev.map(u => u.id === id ? { ...u, status: newStatus } : u));
+    pendingWrites.current.add(id);
+    (async () => {
+      for (let attempt = 0; attempt < 4; attempt++) {
+        if (await bgFetch(`/users/${id}`, { method: 'PUT', body: JSON.stringify({ status: newStatus, id }) })) {
+          pendingWrites.current.delete(id);
+          return;
+        }
+        await new Promise(r => setTimeout(r, 700 * (attempt + 1)));
+      }
+    })();
   }, []);
 
   return (
