@@ -243,9 +243,9 @@ export function PhotoCaptureModal({ open, onClose, onSaved, title, hint }: Props
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
     }} onClick={() => !busy && onClose()}>
       <div onClick={e => e.stopPropagation()} style={{
-        background: '#fff', borderRadius: 16, width: '100%', maxWidth: 520,
+        background: '#fff', borderRadius: 16, width: '100%', maxWidth: 560,
         boxShadow: '0 20px 60px rgba(0,0,0,0.25)',
-        display: 'flex', flexDirection: 'column',
+        display: 'flex', flexDirection: 'column', maxHeight: '94vh',
       }}>
         {/* Header */}
         <div style={{ padding: '18px 20px', borderBottom: '1px solid #EEF1F8', display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -303,12 +303,12 @@ export function PhotoCaptureModal({ open, onClose, onSaved, title, hint }: Props
         )}
 
         {/* Body */}
-        <div style={{ padding: 20 }}>
+        <div style={{ padding: 20, overflowY: 'auto', flex: 1, minHeight: 0 }}>
           {preview ? (
             <div style={{
               borderRadius: 12, overflow: 'hidden',
               border: '1px solid #E3E7F0', background: '#000',
-              width: 240, maxWidth: '100%', aspectRatio: '3 / 4', margin: '0 auto',
+              width: 340, maxWidth: '100%', aspectRatio: '3 / 4', margin: '0 auto',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
             }}>
               <img src={preview} alt="preview" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
@@ -318,7 +318,7 @@ export function PhotoCaptureModal({ open, onClose, onSaved, title, hint }: Props
             <div style={{
               borderRadius: 12, overflow: 'hidden', position: 'relative',
               border: '1px solid #E3E7F0', background: '#0F1629',
-              width: 240, maxWidth: '100%', aspectRatio: '3 / 4', margin: '0 auto',
+              width: 340, maxWidth: '100%', aspectRatio: '3 / 4', margin: '0 auto',
             }}>
               <video
                 ref={videoRef} autoPlay playsInline muted
@@ -332,11 +332,11 @@ export function PhotoCaptureModal({ open, onClose, onSaved, title, hint }: Props
                   <defs>
                     <mask id="faceHole">
                       <rect width="300" height="400" fill="white" />
-                      <ellipse cx="150" cy="168" rx="86" ry="120" fill="black" />
+                      <ellipse cx="150" cy="186" rx="112" ry="156" fill="black" />
                     </mask>
                   </defs>
                   <rect width="300" height="400" fill="rgba(15,22,41,0.42)" mask="url(#faceHole)" />
-                  <ellipse cx="150" cy="168" rx="86" ry="120" fill="none"
+                  <ellipse cx="150" cy="186" rx="112" ry="156" fill="none"
                     stroke="rgba(255,255,255,0.85)" strokeWidth="2.5" strokeDasharray="8 6" />
                   <text x="150" y="372" textAnchor="middle" fill="rgba(255,255,255,0.9)"
                     fontSize="15" fontWeight="600" fontFamily="Arial, sans-serif">Лицо в овале · 3×4</text>
