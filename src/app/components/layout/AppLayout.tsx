@@ -8,6 +8,7 @@ import { useLanguage } from '../../context/LanguageContext';
 import { getOrganizationName, getCurrentOrganization, useOrganizations } from '../../lib/organization';
 import { PhotoCaptureModal } from '../shared/PhotoCaptureModal';
 import { useViewport } from '../../lib/useViewport';
+import { LOGO_DATA_URL } from '../../assets/logo';
 
 // Logo component — uses the tenant org logo on subdomains, KAZSKILLS on the root.
 // Click → user's home page (role-aware).
@@ -57,20 +58,11 @@ const Logo = () => {
 
   return wrap(
     <>
-      <svg width="36" height="36" viewBox="0 0 36 36" fill="none">
-        <rect width="36" height="36" rx="8" fill="url(#grad)"/>
-        <path d="M18 10L26 14V22L18 26L10 22V14L18 10Z" fill="#fff" opacity="0.9"/>
-        <path d="M18 18L26 14" stroke="#1B3D84" strokeWidth="1.8" strokeLinecap="round"/>
-        <path d="M18 18L10 14" stroke="#1B3D84" strokeWidth="1.8" strokeLinecap="round"/>
-        <path d="M18 18V26" stroke="#1B3D84" strokeWidth="1.8" strokeLinecap="round"/>
-        <circle cx="18" cy="18" r="2" fill="#1B3D84"/>
-        <defs>
-          <linearGradient id="grad" x1="0" y1="0" x2="36" y2="36" gradientUnits="userSpaceOnUse">
-            <stop stopColor="#2B5CE6"/>
-            <stop offset="1" stopColor="#1B3D84"/>
-          </linearGradient>
-        </defs>
-      </svg>
+      <img
+        src={LOGO_DATA_URL} alt="KAZSKILLS"
+        width={40} height={40}
+        style={{ width: 40, height: 40, borderRadius: '50%', objectFit: 'cover', background: '#fff', flexShrink: 0 }}
+      />
       <div>
         <div style={{ fontSize: '16px', fontWeight: 700, color: '#1B3D84', lineHeight: 1, letterSpacing: '0.5px' }}>
           {org?.displayName?.toUpperCase() ?? 'KAZSKILLS'}
