@@ -13,13 +13,30 @@ import {
 } from '../../components/Icons';
 import {
   Document, Packer, Paragraph, Table, TableRow, TableCell,
-  TextRun, HeadingLevel, AlignmentType, WidthType, BorderStyle,
+  TextRun, HeadingLevel, AlignmentType, WidthType, BorderStyle, ImageRun,
 } from 'docx';
+import { LOGO_B64, LOGO_DATA_URL } from '../../assets/logo';
 
 const NAVY  = '#1B3D84';
 const BLUE  = '#2B5CE6';
 const BORDER = '#E8ECF6';
 const MUTED  = '#6B7280';
+
+// ─── Logo for generated documents (Word + PDF) ─────────────────────────────────
+function logoBytes(): Uint8Array {
+  const bin = atob(LOGO_B64);
+  const b = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) b[i] = bin.charCodeAt(i);
+  return b;
+}
+function logoWordPara(): Paragraph {
+  return new Paragraph({
+    alignment: AlignmentType.CENTER,
+    spacing: { after: 140 },
+    children: [new ImageRun({ type: 'png', data: logoBytes(), transformation: { width: 60, height: 60 } })],
+  });
+}
+const LOGO_IMG_HTML = `<div style="text-align:center;margin-bottom:8px;"><img src="${LOGO_DATA_URL}" style="width:58px;height:58px;border-radius:50%;"/></div>`;
 
 // ─── Download helper ──────────────────────────────────────────────────────────
 function downloadBlob(blob: Blob, filename: string) {
@@ -101,6 +118,7 @@ async function generateZayavka(
     .filter(c => students.some(u => isEnrolled(u, c.id)));
 
   const children: (Paragraph | Table)[] = [
+    logoWordPara(),
     new Paragraph({
       heading: HeadingLevel.HEADING_1,
       spacing: { after: 100 },
@@ -173,6 +191,7 @@ async function generateLoginsPasswords(
   const titleById = new Map(published.map(c => [c.id, c.title]));
 
   const children: (Paragraph | Table)[] = [
+    logoWordPara(),
     new Paragraph({
       heading: HeadingLevel.HEADING_1,
       spacing: { after: 100 },
@@ -250,6 +269,7 @@ async function generateStatistika(
     .filter(c => students.some(u => isEnrolled(u, c.id)));
 
   const children: (Paragraph | Table)[] = [
+    logoWordPara(),
     new Paragraph({
       heading: HeadingLevel.HEADING_1,
       spacing: { after: 100 },
@@ -349,7 +369,7 @@ async function generateLoginsPasswordsPdf(
   }).join('');
 
   const html = `<div style="width:760px;box-sizing:border-box;padding:34px 36px;background:#fff;${RPT_HEAD}">
-    <div style="font-size:22px;font-weight:bold;margin-bottom:10px;">Логины и пароли</div>
+    ${LOGO_IMG_HTML}<div style="font-size:22px;font-weight:bold;margin-bottom:10px;">Логины и пароли</div>
     <div style="font-size:14px;font-weight:bold;">Организация: ${escHtml(org)}</div>
     ${requestNum ? `<div style="font-size:14px;font-weight:bold;">Номер заявки: ${escHtml(requestNum)}</div>` : ''}
     <div style="font-size:12.5px;color:#666;margin-bottom:8px;">Дата формирования: ${todayStr()}</div>
@@ -397,7 +417,7 @@ async function generateStatistikaPdf(
          <div style="font-size:11px;color:#6B7280;font-style:italic;margin-top:10px;">«—» — курс не назначен. «не сдавал» — назначен, но попыток не было. «N%» — лучший результат.</div>`;
 
   const html = `<div style="width:760px;box-sizing:border-box;padding:34px 36px;background:#fff;${RPT_HEAD}">
-    <div style="font-size:22px;font-weight:bold;margin-bottom:10px;">Статистика</div>
+    ${LOGO_IMG_HTML}<div style="font-size:22px;font-weight:bold;margin-bottom:10px;">Статистика</div>
     <div style="font-size:14px;font-weight:bold;">Организация: ${escHtml(org)}</div>
     ${requestNum ? `<div style="font-size:14px;font-weight:bold;">Номер заявки: ${escHtml(requestNum)}</div>` : ''}
     <div style="font-size:12.5px;color:#666;margin-bottom:16px;">Дата формирования: ${todayStr()}</div>
@@ -431,7 +451,7 @@ async function generateZayavkaPdf(
   }).join('');
 
   const html = `<div style="width:760px;box-sizing:border-box;padding:34px 36px;background:#fff;${RPT_HEAD}">
-    <div style="font-size:22px;font-weight:bold;margin-bottom:10px;">Заявка</div>
+    ${LOGO_IMG_HTML}<div style="font-size:22px;font-weight:bold;margin-bottom:10px;">Заявка</div>
     <div style="font-size:14px;font-weight:bold;">Организация: ${escHtml(org)}</div>
     ${requestNum ? `<div style="font-size:14px;font-weight:bold;">Номер заявки: ${escHtml(requestNum)}</div>` : ''}
     <div style="font-size:12.5px;color:#666;margin-bottom:8px;">Дата формирования: ${todayStr()}</div>
@@ -454,6 +474,7 @@ async function exportBatchCredentials(
     : 'https://kazskills.kz';
 
   const children: (Paragraph | Table)[] = [
+    logoWordPara(),
     new Paragraph({
       heading: HeadingLevel.HEADING_1,
       spacing: { after: 100 },
@@ -555,7 +576,7 @@ async function exportBatchCredentialsPdf(
   </tr>`).join('');
 
   const html = `<div style="width:760px;box-sizing:border-box;padding:34px 36px;background:#fff;${RPT_HEAD}">
-    <div style="font-size:22px;font-weight:bold;margin-bottom:10px;">Логины и пароли</div>
+    ${LOGO_IMG_HTML}<div style="font-size:22px;font-weight:bold;margin-bottom:10px;">Логины и пароли</div>
     <div style="font-size:14px;font-weight:bold;">Организация: ${escHtml(org)}</div>
     <div style="font-size:14px;font-weight:bold;">Номер заявки: ${escHtml(requestNumber)}</div>
     <div style="font-size:12.5px;color:#666;margin-bottom:14px;">Дата формирования: ${todayStr()}</div>

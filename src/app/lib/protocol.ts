@@ -4,6 +4,7 @@ import {
   ImageRun, HorizontalPositionRelativeFrom, VerticalPositionRelativeFrom, TextWrappingType,
 } from 'docx';
 import { projectId, publicAnonKey } from '/utils/supabase/info';
+import { LOGO_DATA_URL } from '../assets/logo';
 import {
   STAMP_B64, STAMP_W, STAMP_H,
   SIG_CHAIR_B64, SIG_CHAIR_W, SIG_CHAIR_H,
@@ -496,6 +497,7 @@ function protocolHtml(type: ProtocolType, d: ProtocolData): string {
 
   return `
   <div style="width:720px;box-sizing:border-box;padding:40px 44px;background:#fff;color:#000;font-family:'Times New Roman',Georgia,serif;font-size:13px;line-height:1.45;">
+    <div style="text-align:center;margin-bottom:10px;"><img src="${LOGO_DATA_URL}" style="width:70px;height:70px;border-radius:50%;"/></div>
     <div style="font-size:10px;font-style:italic;text-align:right;margin-bottom:18px;line-height:1.35;">${esc(cfg.appendix)}</div>
     <div style="text-align:center;font-size:18px;font-weight:bold;margin-bottom:8px;">${esc(cfg.title(no))}</div>
     ${cfg.subtitle ? `<div style="text-align:center;font-weight:bold;margin-bottom:8px;">${esc(cfg.subtitle)}</div>` : ''}
