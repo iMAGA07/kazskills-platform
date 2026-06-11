@@ -669,12 +669,12 @@ export default function CreateCoursePage() {
                             minWidth: 20, fontSize: 13, fontWeight: 700,
                             color: '#6B7280', textAlign: 'center',
                           }}>
-                            {oi + 1}.
+                            {String.fromCharCode(97 + oi)})
                           </span>
                           <input
                             type="text" value={opt.text}
                             onChange={e => updOpt(q.id, opt.id, e.target.value)}
-                            placeholder={`Вариант ${oi + 1}`}
+                            placeholder={`Вариант ${String.fromCharCode(97 + oi)}`}
                             style={{ ...inp, flex: 1 }} onFocus={onFocus} onBlur={onBlur}
                           />
                           {q.options.length > 2 && (

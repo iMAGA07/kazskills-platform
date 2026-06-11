@@ -545,7 +545,7 @@ export default function TestPage() {
                         minWidth: 22, fontSize: 14, fontWeight: 700,
                         color: selected ? '#1E40AF' : '#6B7280',
                       }}>
-                        {i + 1}.
+                        {String.fromCharCode(97 + i)})
                       </span>
                       <span style={{ fontSize: 14, color: selected ? '#1E40AF' : '#374151', fontWeight: selected ? 500 : 400 }}>
                         {optText}

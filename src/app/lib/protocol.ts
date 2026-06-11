@@ -19,6 +19,34 @@ const CHAIRMAN = 'Айтмухамбетов С.Ж.';
 const MEMBER_1 = 'Габбасов Т.У.';
 const MEMBER_2 = 'Сергалиев Н.Х.';
 
+// ─── Language (protocol is rendered in the UI's selected language) ──────────────
+type Lang = 'ru' | 'kz' | 'en';
+function curLang(): Lang {
+  const l = (typeof localStorage !== 'undefined' && localStorage.getItem('kazskills_lang')) || 'ru';
+  return l === 'kz' || l === 'en' ? l : 'ru';
+}
+const TRAINING_ORG_L: Record<Lang, string> = {
+  ru: 'Товарищество с ограниченной ответственностью "STK services"',
+  kz: '«STK services» жауапкершілігі шектеулі серіктестігі',
+  en: '"STK services" Limited Liability Partnership',
+};
+const MONTHS_L: Record<Lang, string[]> = {
+  ru: ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'],
+  kz: ['қаңтар', 'ақпан', 'наурыз', 'сәуір', 'мамыр', 'маусым', 'шілде', 'тамыз', 'қыркүйек', 'қазан', 'қараша', 'желтоқсан'],
+  en: ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'],
+};
+function localDate(lang: Lang, d = new Date()): string {
+  const day = d.getDate(), m = MONTHS_L[lang][d.getMonth()], y = d.getFullYear();
+  if (lang === 'kz') return `${y} жылғы «${day}» ${m}`;
+  if (lang === 'en') return `${m} ${day}, ${y}`;
+  return `«${day}» ${m} ${y} года`;
+}
+const SIG_LABELS: Record<Lang, { chair: string; member: string }> = {
+  ru: { chair: 'Председатель комиссии:', member: 'Члены комиссии:' },
+  kz: { chair: 'Комиссия төрағасы:', member: 'Комиссия мүшелері:' },
+  en: { chair: 'Chairman of the commission:', member: 'Commission members:' },
+};
+
 export type ProtocolType = 'biot' | 'pb' | 'ptm';
 
 /** Map a course to its protocol template by title keywords. */
@@ -314,56 +342,152 @@ interface TypeConfig {
   row: (d: ProtocolData) => string[];
 }
 
-const TYPE_CFG: Record<ProtocolType, TypeConfig> = {
-  biot: {
-    appendix: 'Приложение 2 к Правилам и срокам проведения обучения, инструктирования и проверок знаний по вопросам безопасности и охраны труда работников, руководителей и лиц, ответственных за обеспечение безопасности и охраны труда',
-    title: (no) => `Протокол № ${no}`,
-    subtitle: 'Заседания экзаменационной комиссии по проверке знаний по безопасности и охране труда работников',
-    introLines: (date) => [
-      `${date} Комиссия в составе:`,
-      `Председатель: директор — ${CHAIRMAN}`,
-      `Члены комиссии: эксперт — ${MEMBER_1}, преподаватель — ${MEMBER_2}`,
-      'На основании приказа от «30» января 2026 г. №03/26 приняла экзамен и установила:',
-      'Вид проверки: первичный',
-    ],
-    columns: ['№п/п', 'Фамилия, имя, отчество (при его наличии)', 'Должность', 'Наименование организации', 'Отметка о проверке знаний (прошёл, не прошёл)', 'Примеч.'],
-    row: (d) => ['1', d.fio, d.position || '—', d.orgFullName, 'прошёл', '—'],
+const TYPE_CFG_ALL: Record<Lang, Record<ProtocolType, TypeConfig>> = {
+  ru: {
+    biot: {
+      appendix: 'Приложение 2 к Правилам и срокам проведения обучения, инструктирования и проверок знаний по вопросам безопасности и охраны труда работников, руководителей и лиц, ответственных за обеспечение безопасности и охраны труда',
+      title: (no) => `Протокол № ${no}`,
+      subtitle: 'Заседания экзаменационной комиссии по проверке знаний по безопасности и охране труда работников',
+      introLines: (date) => [
+        `${date} Комиссия в составе:`,
+        `Председатель: директор — ${CHAIRMAN}`,
+        `Члены комиссии: эксперт — ${MEMBER_1}, преподаватель — ${MEMBER_2}`,
+        'На основании приказа от «30» января 2026 г. №03/26 приняла экзамен и установила:',
+        'Вид проверки: первичный',
+      ],
+      columns: ['№п/п', 'Фамилия, имя, отчество (при его наличии)', 'Должность', 'Наименование организации', 'Отметка о проверке знаний (прошёл, не прошёл)', 'Примеч.'],
+      row: (d) => ['1', d.fio, d.position || '—', d.orgFullName, 'прошёл', '—'],
+    },
+    pb: {
+      appendix: 'Приложение 4 к Правилам подготовки, переподготовки и проверки знаний руководителей, специалистов и работников в области промышленной безопасности',
+      title: (no) => `ПРОТОКОЛ № ${no}`,
+      introLines: (date) => [
+        `${date} Комиссия в составе:`,
+        `Председатель: ${CHAIRMAN}`,
+        `Члены комиссии: ${MEMBER_1}, ${MEMBER_2}`,
+      ],
+      description: (org) => [
+        'Провели проверку знаний в объёме требований промышленной безопасности, установленных Законом РК «О гражданской защите», «Правил обеспечения промышленной безопасности» и нормативными правовыми актами Республики Казахстан:',
+        `У сотрудника компании ${org}`,
+        'По курсу «Промышленная безопасность на опасных производственных объектах» установили:',
+      ],
+      columns: ['№п/п', 'Фамилия, имя, отчество (при его наличии)', 'Должность', 'Образование', 'Заключение комиссии (сдал, не сдал)'],
+      row: (d) => ['1', d.fio, d.position || '—', d.education || 'Среднее', 'Сдал'],
+    },
+    ptm: {
+      appendix: 'Приложение 5 к Правилам обучения работников организаций и населения мерам пожарной безопасности и требованиям к содержанию учебных программ по обучению мерам пожарной безопасности',
+      title: (no) => `Протокол № ${no}`,
+      subtitle: 'заседания квалификационной комиссии по проверке знаний по пожарной безопасности в объёме пожарно-технического минимума',
+      introLines: (date) => [
+        `${date}`,
+        'В соответствии с приказом № 05/26 от 30.01.2026 года квалификационная комиссия в составе:',
+        `Председатель: директор — ${CHAIRMAN}`,
+        `Члены комиссии: эксперт — ${MEMBER_1}, преподаватель — ${MEMBER_2}`,
+        'приняла экзамен по пожарной безопасности в объёме пожарно-технического минимума и установила следующие результаты:',
+      ],
+      columns: ['№п/п', 'Фамилия, имя, отчество (при его наличии)', 'Должность', 'Организация', 'Отметка о проверке знаний (прошёл, не прошёл)', 'Подпись'],
+      row: (d) => ['1', d.fio, d.position || '—', d.orgFullName, 'прошёл', ''],
+    },
   },
-  pb: {
-    appendix: 'Приложение 4 к Правилам подготовки, переподготовки и проверки знаний руководителей, специалистов и работников в области промышленной безопасности',
-    title: (no) => `ПРОТОКОЛ № ${no}`,
-    introLines: (date) => [
-      `${date} Комиссия в составе:`,
-      `Председатель: ${CHAIRMAN}`,
-      `Члены комиссии: ${MEMBER_1}, ${MEMBER_2}`,
-    ],
-    description: (org) => [
-      'Провели проверку знаний в объёме требований промышленной безопасности, установленных Законом РК «О гражданской защите», «Правил обеспечения промышленной безопасности» и нормативными правовыми актами Республики Казахстан:',
-      `У сотрудника компании ${org}`,
-      'По курсу «Промышленная безопасность на опасных производственных объектах» установили:',
-    ],
-    columns: ['№п/п', 'Фамилия, имя, отчество (при его наличии)', 'Должность', 'Образование', 'Заключение комиссии (сдал, не сдал)'],
-    row: (d) => ['1', d.fio, d.position || '—', d.education || 'Среднее', 'Сдал'],
+  kz: {
+    biot: {
+      appendix: 'Қызметкерлердің, басшылардың және еңбек қауіпсіздігі мен еңбекті қорғауды қамтамасыз етуге жауапты адамдардың еңбек қауіпсіздігі және еңбекті қорғау мәселелері бойынша оқытуды, нұсқаулық беруді және білімін тексеруді өткізу қағидалары мен мерзімдеріне 2-қосымша',
+      title: (no) => `№ ${no} Хаттама`,
+      subtitle: 'Қызметкерлердің еңбек қауіпсіздігі және еңбекті қорғау бойынша білімін тексеру жөніндегі емтихан комиссиясының отырысы',
+      introLines: (date) => [
+        `${date} мынадай құрамдағы комиссия:`,
+        `Төраға: директор — ${CHAIRMAN}`,
+        `Комиссия мүшелері: сарапшы — ${MEMBER_1}, оқытушы — ${MEMBER_2}`,
+        '2026 жылғы «30» қаңтардағы №03/26 бұйрық негізінде емтихан қабылдап, мынаны белгіледі:',
+        'Тексеру түрі: алғашқы',
+      ],
+      columns: ['р/с', 'Тегі, аты, әкесінің аты (бар болса)', 'Лауазымы', 'Ұйымның атауы', 'Білімін тексеру нәтижесі (өтті, өтпеді)', 'Ескерту'],
+      row: (d) => ['1', d.fio, d.position || '—', d.orgFullName, 'өтті', '—'],
+    },
+    pb: {
+      appendix: 'Өнеркәсіптік қауіпсіздік саласындағы басшыларды, мамандарды және жұмысшыларды даярлау, қайта даярлау және білімін тексеру қағидаларына 4-қосымша',
+      title: (no) => `№ ${no} ХАТТАМА`,
+      introLines: (date) => [
+        `${date} мынадай құрамдағы комиссия:`,
+        `Төраға: ${CHAIRMAN}`,
+        `Комиссия мүшелері: ${MEMBER_1}, ${MEMBER_2}`,
+      ],
+      description: (org) => [
+        'ҚР «Азаматтық қорғау туралы» Заңында, «Өнеркәсіптік қауіпсіздікті қамтамасыз ету қағидаларында» және Қазақстан Республикасының нормативтік құқықтық актілерінде белгіленген өнеркәсіптік қауіпсіздік талаптары көлемінде білімін тексеруді жүргізді:',
+        `${org} компаниясының қызметкерінде`,
+        '«Қауіпті өндірістік объектілердегі өнеркәсіптік қауіпсіздік» курсы бойынша мынаны белгіледі:',
+      ],
+      columns: ['р/с', 'Тегі, аты, әкесінің аты (бар болса)', 'Лауазымы', 'Білімі', 'Комиссияның қорытындысы (тапсырды, тапсырмады)'],
+      row: (d) => ['1', d.fio, d.position || '—', d.education || 'Орта', 'Тапсырды'],
+    },
+    ptm: {
+      appendix: 'Ұйымдардың жұмысшыларын және халықты өрт қауіпсіздігі шараларына оқыту қағидаларына және өрт қауіпсіздігі шараларына оқыту жөніндегі оқу бағдарламаларының мазмұнына қойылатын талаптарға 5-қосымша',
+      title: (no) => `№ ${no} Хаттама`,
+      subtitle: 'өрт-техникалық минимум көлемінде өрт қауіпсіздігі бойынша білімін тексеру жөніндегі біліктілік комиссиясының отырысы',
+      introLines: (date) => [
+        `${date}`,
+        '2026 жылғы 30.01.2026 №05/26 бұйрыққа сәйкес мынадай құрамдағы біліктілік комиссиясы:',
+        `Төраға: директор — ${CHAIRMAN}`,
+        `Комиссия мүшелері: сарапшы — ${MEMBER_1}, оқытушы — ${MEMBER_2}`,
+        'өрт-техникалық минимум көлемінде өрт қауіпсіздігі бойынша емтихан қабылдап, мынадай нәтижелерді белгіледі:',
+      ],
+      columns: ['р/с', 'Тегі, аты, әкесінің аты (бар болса)', 'Лауазымы', 'Ұйым', 'Білімін тексеру нәтижесі (өтті, өтпеді)', 'Қолы'],
+      row: (d) => ['1', d.fio, d.position || '—', d.orgFullName, 'өтті', ''],
+    },
   },
-  ptm: {
-    appendix: 'Приложение 5 к Правилам обучения работников организаций и населения мерам пожарной безопасности и требованиям к содержанию учебных программ по обучению мерам пожарной безопасности',
-    title: (no) => `Протокол № ${no}`,
-    subtitle: 'заседания квалификационной комиссии по проверке знаний по пожарной безопасности в объёме пожарно-технического минимума',
-    introLines: (date) => [
-      `${date}`,
-      'В соответствии с приказом № 05/26 от 30.01.2026 года квалификационная комиссия в составе:',
-      `Председатель: директор — ${CHAIRMAN}`,
-      `Члены комиссии: эксперт — ${MEMBER_1}, преподаватель — ${MEMBER_2}`,
-      'приняла экзамен по пожарной безопасности в объёме пожарно-технического минимума и установила следующие результаты:',
-    ],
-    columns: ['№п/п', 'Фамилия, имя, отчество (при его наличии)', 'Должность', 'Организация', 'Отметка о проверке знаний (прошёл, не прошёл)', 'Подпись'],
-    row: (d) => ['1', d.fio, d.position || '—', d.orgFullName, 'прошёл', ''],
+  en: {
+    biot: {
+      appendix: 'Appendix 2 to the Rules and terms for conducting training, instruction and knowledge assessment on occupational safety and health of employees, managers and persons responsible for ensuring occupational safety and health',
+      title: (no) => `Protocol No. ${no}`,
+      subtitle: 'Meeting of the examination commission for assessing employees’ knowledge of occupational safety and health',
+      introLines: (date) => [
+        `${date}. The commission composed of:`,
+        `Chairman: director — ${CHAIRMAN}`,
+        `Commission members: expert — ${MEMBER_1}, instructor — ${MEMBER_2}`,
+        'On the basis of order No. 03/26 dated January 30, 2026, conducted the examination and established:',
+        'Type of assessment: initial',
+      ],
+      columns: ['No.', 'Full name (if any)', 'Position', 'Name of organization', 'Knowledge check (passed, failed)', 'Notes'],
+      row: (d) => ['1', d.fio, d.position || '—', d.orgFullName, 'passed', '—'],
+    },
+    pb: {
+      appendix: 'Appendix 4 to the Rules for preparation, retraining and knowledge assessment of managers, specialists and workers in the field of industrial safety',
+      title: (no) => `PROTOCOL No. ${no}`,
+      introLines: (date) => [
+        `${date}. The commission composed of:`,
+        `Chairman: ${CHAIRMAN}`,
+        `Commission members: ${MEMBER_1}, ${MEMBER_2}`,
+      ],
+      description: (org) => [
+        'Conducted a knowledge assessment within the scope of industrial safety requirements established by the RK Law “On Civil Protection”, the “Rules for ensuring industrial safety” and the regulatory legal acts of the Republic of Kazakhstan:',
+        `For the employee of company ${org}`,
+        'For the course “Industrial safety at hazardous production facilities” established:',
+      ],
+      columns: ['No.', 'Full name (if any)', 'Position', 'Education', 'Commission conclusion (passed, failed)'],
+      row: (d) => ['1', d.fio, d.position || '—', d.education || 'Secondary', 'Passed'],
+    },
+    ptm: {
+      appendix: 'Appendix 5 to the Rules for training employees of organizations and the population in fire safety measures and the requirements for the content of training programs on fire safety measures',
+      title: (no) => `Protocol No. ${no}`,
+      subtitle: 'meeting of the qualification commission for assessing fire safety knowledge within the scope of the fire-technical minimum',
+      introLines: (date) => [
+        `${date}`,
+        'In accordance with order No. 05/26 dated 30.01.2026, the qualification commission composed of:',
+        `Chairman: director — ${CHAIRMAN}`,
+        `Commission members: expert — ${MEMBER_1}, instructor — ${MEMBER_2}`,
+        'conducted the fire safety examination within the scope of the fire-technical minimum and established the following results:',
+      ],
+      columns: ['No.', 'Full name (if any)', 'Position', 'Organization', 'Knowledge check (passed, failed)', 'Signature'],
+      row: (d) => ['1', d.fio, d.position || '—', d.orgFullName, 'passed', ''],
+    },
   },
 };
 
 function protocolHtml(type: ProtocolType, d: ProtocolData): string {
-  const cfg = TYPE_CFG[type];
-  const date = ruDate(d.date ?? new Date());
+  const lang = curLang();
+  const cfg = (TYPE_CFG_ALL[lang] ?? TYPE_CFG_ALL.ru)[type];
+  const date = localDate(lang, d.date ?? new Date());
+  const sig = SIG_LABELS[lang];
   const no = formatProtocolNo(d.protocolNo);
   const intro = cfg.introLines(date).map(l => `<div style="margin-bottom:4px;">${esc(l)}</div>`).join('');
   const desc = cfg.description ? cfg.description(d.orgFullName).map(l => `<div style="margin-bottom:4px;">${esc(l)}</div>`).join('') : '';
@@ -375,7 +499,7 @@ function protocolHtml(type: ProtocolType, d: ProtocolData): string {
     <div style="font-size:10px;font-style:italic;text-align:right;margin-bottom:18px;line-height:1.35;">${esc(cfg.appendix)}</div>
     <div style="text-align:center;font-size:18px;font-weight:bold;margin-bottom:8px;">${esc(cfg.title(no))}</div>
     ${cfg.subtitle ? `<div style="text-align:center;font-weight:bold;margin-bottom:8px;">${esc(cfg.subtitle)}</div>` : ''}
-    <div style="text-align:center;font-weight:bold;margin-bottom:16px;">${esc(TRAINING_ORG)}</div>
+    <div style="text-align:center;font-weight:bold;margin-bottom:16px;">${esc(TRAINING_ORG_L[lang])}</div>
     ${intro}
     ${desc ? `<div style="margin-top:6px;">${desc}</div>` : ''}
     <table style="width:100%;border-collapse:collapse;margin-top:14px;">
@@ -387,17 +511,17 @@ function protocolHtml(type: ProtocolType, d: ProtocolData): string {
       <img src="${dataUrl(STAMP_B64)}" style="position:absolute;left:330px;top:40px;width:150px;height:${Math.round(150 * STAMP_H / STAMP_W)}px;opacity:0.85;z-index:0;"/>
       <table style="border-collapse:collapse;position:relative;z-index:1;">
         <tr>
-          <td style="padding:8px 0;white-space:nowrap;vertical-align:middle;">Председатель комиссии:</td>
+          <td style="padding:8px 0;white-space:nowrap;vertical-align:middle;">${esc(sig.chair)}</td>
           <td style="padding:8px 18px;white-space:nowrap;vertical-align:middle;">${esc(CHAIRMAN)}</td>
           <td style="padding:8px 0;vertical-align:middle;"><img src="${dataUrl(SIG_CHAIR_B64)}" style="height:34px;display:block;"/></td>
         </tr>
         <tr>
-          <td style="padding:8px 0;white-space:nowrap;vertical-align:middle;">Члены комиссии:</td>
+          <td style="padding:8px 0;white-space:nowrap;vertical-align:middle;">${esc(sig.member)}</td>
           <td style="padding:8px 18px;white-space:nowrap;vertical-align:middle;">${esc(MEMBER_1)}</td>
           <td style="padding:8px 0;vertical-align:middle;"><img src="${dataUrl(SIG_M1_B64)}" style="height:40px;display:block;"/></td>
         </tr>
         <tr>
-          <td style="padding:8px 0;white-space:nowrap;vertical-align:middle;">Члены комиссии:</td>
+          <td style="padding:8px 0;white-space:nowrap;vertical-align:middle;">${esc(sig.member)}</td>
           <td style="padding:8px 18px;white-space:nowrap;vertical-align:middle;">${esc(MEMBER_2)}</td>
           <td style="padding:8px 0;vertical-align:middle;"><img src="${dataUrl(SIG_M2_B64)}" style="height:34px;display:block;"/></td>
         </tr>
