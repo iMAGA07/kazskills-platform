@@ -403,6 +403,14 @@ async function getSession(token: string | undefined): Promise<Session | null> {
     await kv.del(`session:${token}`).catch(() => {});
     return null;
   }
+  // The account behind this session must still exist and be active. Otherwise a
+  // DELETED or BLOCKED user would keep access via their old token until the 7-day
+  // expiry — deleting a user must revoke access immediately, on the next request.
+  const u = (await kv.get(`user:${sess.userId}`)) as ServerUser | null;
+  if (!u || u.status === "blocked") {
+    await kv.del(`session:${token}`).catch(() => {});
+    return null;
+  }
   return sess;
 }
 

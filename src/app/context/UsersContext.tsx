@@ -324,9 +324,16 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
   // just-added user / just-saved edit reverts on the next pull (people "fly off"
   // заявки and the count jumps). Cleared once the server confirms (2xx).
   const pendingWrites = useRef<Set<string>>(new Set());
-  // Ids the admin deleted locally whose DELETE hasn't been confirmed — keep them
-  // gone in the merge so a pull doesn't resurrect them. Cleared on confirmed delete.
-  const pendingDeletes = useRef<Set<string>>(new Set());
+  // Ids the admin deleted whose DELETE hasn't been confirmed on the server. Kept out
+  // of the merge, PERSISTED to localStorage, and re-issued on every sync — so a
+  // delete that didn't land (e.g. expired admin session) is retried until the user
+  // is truly removed; otherwise they reappear on reload and can still log in.
+  const pendingDeletes = useRef<Set<string>>(new Set(
+    (() => { try { return JSON.parse(localStorage.getItem('kazskills_pending_deletes') || '[]') as string[]; } catch { return []; } })()
+  ));
+  const savePendingDeletes = () => {
+    try { localStorage.setItem('kazskills_pending_deletes', JSON.stringify([...pendingDeletes.current])); } catch {}
+  };
 
   const syncFromServer = useCallback(async () => {
     // Always try to ensure the server is seeded — it's idempotent (no-op if not empty).
@@ -370,6 +377,19 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
           localStorage.setItem(STORAGE_KEY, JSON.stringify(merged));
           return merged;
         });
+
+        // Durable delete: re-issue any DELETE that hasn't landed on the server yet
+        // (and clear ids the server has already removed).
+        for (const id of [...pendingDeletes.current]) {
+          if (data.some(u => u.id === id)) {
+            bgFetch(`/users/${id}`, { method: 'DELETE' }).then(ok => {
+              if (ok) { pendingDeletes.current.delete(id); savePendingDeletes(); }
+            });
+          } else {
+            pendingDeletes.current.delete(id);
+            savePendingDeletes();
+          }
+        }
       }
     } catch (e) {
       console.warn('User sync failed, using local cache:', e);
@@ -496,12 +516,15 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
 
   const deleteUser = useCallback((id: string) => {
     persistFn(prev => prev.filter(u => u.id !== id));
-    // Keep it gone across pulls until the server confirms the delete.
+    // Keep it gone across pulls until the server confirms the delete, and persist
+    // the pending delete so a failed attempt is retried on the next sync.
     pendingDeletes.current.add(id);
+    savePendingDeletes();
     (async () => {
       for (let attempt = 0; attempt < 4; attempt++) {
         if (await bgFetch(`/users/${id}`, { method: 'DELETE' })) {
           pendingDeletes.current.delete(id);
+          savePendingDeletes();
           return;
         }
         await new Promise(r => setTimeout(r, 700 * (attempt + 1)));

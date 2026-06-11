@@ -139,6 +139,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener('session-expired', onExpired);
   }, [user]);
 
+  // Re-validate the restored session against the server on boot and when the tab
+  // regains focus. The localStorage user blob is NOT trusted on its own: a user
+  // deleted or blocked while logged in must be kicked out (their cached token no
+  // longer resolves to an account → /auth/me returns 401/404).
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    const check = async () => {
+      const token = localStorage.getItem(TOKEN_KEY);
+      if (!token) return;
+      try {
+        const res = await fetch(`${BASE}/auth/me`, { headers: { ...SUPABASE_HEADERS, 'x-session-token': token } });
+        if (!cancelled && (res.status === 401 || res.status === 404)) {
+          localStorage.removeItem(USER_KEY);
+          localStorage.removeItem(TOKEN_KEY);
+          setUser(null);
+        }
+      } catch { /* offline — keep the cached session rather than locking the user out */ }
+    };
+    check();
+    const onFocus = () => check();
+    window.addEventListener('focus', onFocus);
+    return () => { cancelled = true; window.removeEventListener('focus', onFocus); };
+  }, [user?.id]);
+
   const login = useCallback(async (email: string, password: string): Promise<LoginResult> => {
     const tenantSlug = getOrganizationSlug();
 
