@@ -77,8 +77,10 @@ export function getOrganizationSlug(): string | null {
   ) return null;
   const parts = host.split('.');
   if (parts.length < 3) return null;
-  const sub = parts[0];
-  if (sub === 'www' || sub === 'kazskills') return null;
+  const sub = parts[0].toLowerCase();
+  // Reserved service subdomains are NOT tenants — they fall back to the root view.
+  const RESERVED = ['www', 'kazskills', 'api', 'app', 'admin', 'mail', 'static', 'assets'];
+  if (RESERVED.includes(sub)) return null;
   return sub;
 }
 

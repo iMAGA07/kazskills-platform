@@ -267,7 +267,7 @@ export function CoursesProvider({ children }: { children: ReactNode }) {
     const key = `${userId}:${courseId}`;
     if (progressCache[key]) return progressCache[key];
 
-    const res  = await fetch(`${BASE}/progress/${userId}/${courseId}`, { headers: HEADERS });
+    const res  = await fetch(`${BASE}/progress/${userId}/${courseId}`, { headers: authHeaders() });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error ?? 'Failed to fetch progress');
 
