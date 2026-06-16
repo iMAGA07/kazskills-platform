@@ -50,7 +50,9 @@ export function OrganizationsProvider({ children }: { children: React.ReactNode 
     }).catch(() => {});
 
     try {
-      const res = await fetch(`${BASE}/organizations`, { headers: authHeaders() });
+      // no-store: the org list must always be fresh — a cached response would
+      // hide a just-created organization (and clobber it back out of the registry).
+      const res = await fetch(`${BASE}/organizations`, { headers: authHeaders(), cache: 'no-store' });
       if (!res.ok) return;
       const data: Organization[] = await res.json();
       if (Array.isArray(data) && data.length > 0) {
