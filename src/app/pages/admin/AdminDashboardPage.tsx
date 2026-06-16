@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router';
 import { useUsers, type ManagedUser, type BatchUserInput } from '../../context/UsersContext';
 import { useCourses, UserProgress, sortCourses } from '../../context/CoursesContext';
 import { CourseAssignPicker } from '../../components/shared/CourseAssignPicker';
-import { getCurrentOrganization, slugForLegacyOrgName } from '../../lib/organization';
+import { getCurrentOrganization, slugForLegacyOrgName, useOrganizations } from '../../lib/organization';
 import { useOrganizationsContext } from '../../context/OrganizationsContext';
 import { htmlToPdf } from '../../lib/reportPdf';
 import {
@@ -728,8 +728,14 @@ function BatchCreateModal({ open, onClose }: { open: boolean; onClose: () => voi
   const { users } = useUsers();
   const publishedCourses = sortCourses(courses.filter(c => c.published));
   const tenantOrg = getCurrentOrganization();
+  const registryOrgs = useOrganizations();
 
-  const organizations = [...new Set(users.filter(u => u.role === 'student').map(u => u.organization))].sort();
+  // Org options = registered organizations (so a brand-new, still-empty org is
+  // selectable on the root domain) ∪ organizations existing students already belong to.
+  const organizations = [...new Set([
+    ...registryOrgs.map(o => o.fullName),
+    ...users.filter(u => u.role === 'student').map(u => u.organization),
+  ].filter(Boolean) as string[])].sort();
 
   const [step, setStep] = useState(1);
 
