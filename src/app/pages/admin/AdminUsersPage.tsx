@@ -2,7 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useUsers, type ManagedUser } from '../../context/UsersContext';
 import { useCourses, sortCourses } from '../../context/CoursesContext';
-import { getCurrentOrganization } from '../../lib/organization';
+import { getCurrentOrganization, useOrganizations } from '../../lib/organization';
 import { CourseAssignPicker } from '../../components/shared/CourseAssignPicker';
 import { downloadProtocol, protocolTypeForCourse, protocolTypeLabel } from '../../lib/protocol';
 import {
@@ -740,10 +740,14 @@ export default function AdminUsersPage() {
   const [protocolsUser, setProtocolsUser] = useState<ManagedUser | null>(null);
   const [detailsUser, setDetailsUser] = useState<ManagedUser | null>(null);
 
-  // unique organizations
+  const registryOrgs = useOrganizations();
+  // organizations = registry (so a brand-new, still-empty org is selectable) ∪ orgs existing users already belong to
   const organizations = useMemo(() => {
-    return Array.from(new Set(users.map(u => u.organization))).sort();
-  }, [users]);
+    return Array.from(new Set([
+      ...registryOrgs.map(o => o.fullName),
+      ...users.map(u => u.organization),
+    ].filter(Boolean) as string[])).sort();
+  }, [users, registryOrgs]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir(d => d === 'asc' ? 'desc' : 'asc');
