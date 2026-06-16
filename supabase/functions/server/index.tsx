@@ -257,8 +257,12 @@ app.get("/make-server-3ed1835c/progress/:userId/:courseId", async (c) => {
   }
 });
 
-// POST /progress/:userId/:courseId/lesson — mark lesson complete
-app.post("/make-server-3ed1835c/progress/:userId/:courseId/lesson", async (c) => {
+// POST /progress/:userId/:courseId/lesson — mark lesson complete (self or admin)
+app.post("/make-server-3ed1835c/progress/:userId/:courseId/lesson", requireAuth, async (c) => {
+  const sess = c.get("session") as Session;
+  if (sess.role !== "admin" && sess.userId !== c.req.param("userId")) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
   try {
     const { userId, courseId } = c.req.param();
     const { lessonId } = await c.req.json();
@@ -286,8 +290,12 @@ app.post("/make-server-3ed1835c/progress/:userId/:courseId/lesson", async (c) =>
   }
 });
 
-// GET /progress/:userId — get all progress for a user
-app.get("/make-server-3ed1835c/progress/:userId", async (c) => {
+// GET /progress/:userId — get all progress for a user (self or admin)
+app.get("/make-server-3ed1835c/progress/:userId", requireAuth, async (c) => {
+  const sess = c.get("session") as Session;
+  if (sess.role !== "admin" && sess.userId !== c.req.param("userId")) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
   try {
     const { userId } = c.req.param();
     const allProgress = await kv.getByPrefix(`progress:${userId}:`);
@@ -352,8 +360,12 @@ app.post("/make-server-3ed1835c/attempts/:userId/:courseId", requireAuth, async 
   }
 });
 
-// GET /attempts/:userId/:courseId — get attempts for a user+course
-app.get("/make-server-3ed1835c/attempts/:userId/:courseId", async (c) => {
+// GET /attempts/:userId/:courseId — get attempts for a user+course (self or admin)
+app.get("/make-server-3ed1835c/attempts/:userId/:courseId", requireAuth, async (c) => {
+  const sess = c.get("session") as Session;
+  if (sess.role !== "admin" && sess.userId !== c.req.param("userId")) {
+    return c.json({ error: "Forbidden" }, 403);
+  }
   try {
     const { userId, courseId } = c.req.param();
     const progress = await kv.get(`progress:${userId}:${courseId}`);
