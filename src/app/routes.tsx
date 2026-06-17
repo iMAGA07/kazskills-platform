@@ -16,6 +16,7 @@ import CreateCoursePage from './pages/admin/CreateCoursePage';
 import AdminUsersPage from './pages/admin/AdminUsersPage';
 import AdminAnalyticsPage from './pages/admin/AdminAnalyticsPage';
 import RepDashboard from './pages/rep/RepDashboard';
+import VideoRoomPage from './pages/VideoRoomPage';
 
 export const router = createBrowserRouter([
   {
@@ -78,6 +79,11 @@ export const router = createBrowserRouter([
         ],
       },
     ],
+  },
+  // Video room (Jitsi prototype) — standalone, full-screen, outside AppLayout.
+  {
+    path: '/room/:roomId',
+    element: <VideoRoomPage />,
   },
   {
     path: '*',
