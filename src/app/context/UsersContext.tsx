@@ -347,7 +347,9 @@ export function UsersProvider({ children }: { children: React.ReactNode }) {
     const token = localStorage.getItem(TOKEN_KEY);
     if (!token) return;
     try {
-      const res = await fetch(`${BASE}/users`, { headers: authHeaders() });
+      // no-store: the user list must be fresh every sync — a cached response
+      // hides recent changes (e.g. a just-uploaded photo shows as "no photo").
+      const res = await fetch(`${BASE}/users`, { headers: authHeaders(), cache: 'no-store' });
       if (res.status === 401) {
         window.dispatchEvent(new Event('session-expired'));
         return;
